@@ -820,10 +820,13 @@ export function validateSecrets(
         throw new Error('secret URLs must use http(s)')
       }
     }
+    if (item.provider !== undefined && (typeof item.provider !== 'string' || !item.provider))
+      throw new Error('secret providers must be non-empty strings')
     return {
       name: item.name,
       description: item.description,
       ...(item.url === undefined ? {} : { url: item.url }),
+      ...(item.provider === undefined ? {} : { provider: item.provider }),
     }
   })
 }

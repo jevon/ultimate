@@ -1,3 +1,6 @@
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { ModelRuntime } from '@earendil-works/pi-coding-agent'
 import { afterEach, expect, it, vi } from 'vitest'
 import classify, { secrets } from '../extensions/classify/server.ts'
 import { ClassifyApi } from '../extensions/classify/api.ts'
@@ -9,15 +12,27 @@ import { removeTemp, temp } from './helpers.ts'
 const cleanup: string[] = []
 afterEach(async () => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
   for (const root of cleanup.splice(0)) await removeTemp(root)
 })
 
-async function fixture(key = true) {
+async function fixture(key = true, models?: unknown) {
   const root = await temp()
   cleanup.push(root)
   if (key) await writeSecret(root, 'TYPESAFE_API_KEY', 'test-sentinel')
+  vi.stubEnv('TYPESAFE_API_KEY', undefined)
+  const modelsPath = join(root, 'models.json')
+  if (models) await writeFile(modelsPath, JSON.stringify(models))
+  const modelRuntime = await ModelRuntime.create({
+    modelsPath: models ? modelsPath : null,
+    authPath: join(root, 'auth.json'),
+  })
   const implement = vi.fn<(api: typeof ClassifyApi, service: ClassifyService) => void>()
-  const extension = classify({ userHome: root, implement } as unknown as ExtensionHost)
+  const extension = classify({
+    userHome: root,
+    implement,
+    modelRuntime,
+  } as unknown as ExtensionHost)
   expect(extension.name).toBe('classify')
   expect(implement.mock.calls[0][0]).toBe(ClassifyApi)
   return { root, service: implement.mock.calls[0][1] }
@@ -58,6 +73,7 @@ it('declares a valid secret for the Secrets panel', () => {
       name: 'TYPESAFE_API_KEY',
       description: expect.any(String),
       url: 'https://console.typesafe.ai/keys',
+      provider: 'typesafe',
     },
   ])
   expect(secrets[0].name).toMatch(/^[A-Z][A-Z0-9_]*$/)
@@ -84,6 +100,23 @@ it('sends the pinned model, JSON questions, stored key and abort signal; parses 
   await service.ask(request, signal)
   expect(fetch.mock.calls[1][1]?.headers).toEqual({
     Authorization: 'Bearer updated-sentinel',
+    'Content-Type': 'application/json',
+  })
+})
+
+it("sends to the endpoint and key of Pi's configured typesafe provider over the stored secret", async () => {
+  vi.stubEnv('EXAMPLE_PROXY_KEY', 'proxy-sentinel')
+  const { service } = await fixture(true, {
+    providers: {
+      typesafe: { baseUrl: 'https://proxy.example.com/typesafe/v1', apiKey: '$EXAMPLE_PROXY_KEY' },
+    },
+  })
+  const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => Response.json(body))
+  vi.stubGlobal('fetch', fetch)
+  await service.ask(request, new AbortController().signal)
+  expect(fetch.mock.calls[0][0]).toBe('https://proxy.example.com/typesafe/v1/systemone')
+  expect(fetch.mock.calls[0][1]?.headers).toEqual({
+    Authorization: 'Bearer proxy-sentinel',
     'Content-Type': 'application/json',
   })
 })

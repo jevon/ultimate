@@ -92,7 +92,8 @@ export interface ExtensionInfo {
     sections: string[]
     hooks: number
     docs: string[]
-    secrets?: { name: string; description: string; url?: string }[]
+    /** `provider`: a model provider whose configured auth stands in for the secret. */
+    secrets?: { name: string; description: string; url?: string; provider?: string }[]
     error?: string
   }
 }

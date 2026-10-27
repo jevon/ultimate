@@ -9,6 +9,7 @@ export const secrets = [
     name: 'TYPESAFE_API_KEY',
     description: 'TypeSafe API key for Jev typed judgments',
     url: 'https://console.typesafe.ai/keys',
+    provider: 'typesafe',
   },
 ]
 
@@ -19,13 +20,19 @@ function record(value: unknown): value is Record<string, unknown> {
 export default function classify(host: ExtensionHost) {
   const service: ClassifyService = {
     async ask(request, signal) {
-      const key = await readSecret(host.userHome, 'TYPESAFE_API_KEY')
+      // Pi's `typesafe` provider (models.json, auth.json or its env key) wins over the secret, so a configured
+      // endpoint gets its own key.
+      const key =
+        (await host.modelRuntime.getAuth('typesafe'))?.auth.apiKey ??
+        (await readSecret(host.userHome, 'TYPESAFE_API_KEY'))
       if (!key) {
         throw new Error(
           'Missing TYPESAFE_API_KEY. Enable secrets and add TYPESAFE_API_KEY in the Secrets panel (⌘K → Secrets).',
         )
       }
-      const response = await fetch('https://api.typesafe.ai/v1/systemone', {
+      const base =
+        host.modelRuntime.getProvider('typesafe')?.baseUrl ?? 'https://api.typesafe.ai/v1'
+      const response = await fetch(`${base.replace(/\/+$/, '')}/systemone`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: 'jev-1.14.0', ...request }),
