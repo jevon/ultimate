@@ -1,7 +1,7 @@
 ---
 name: reviewer-correctness
-description: Correctness, security and regressions review of an immutable commit range (Astra 6).
-model: openai-codex/gpt-6-astra
+description: Correctness, security and regressions review of an immutable commit range (Opus 5.5).
+model: anthropic/claude-opus-5-5
 thinking: high
 tools: [read, bash]
 ---

@@ -3,7 +3,7 @@
     "enable": ["voice-live"]
   },
   "instance": {
-    "model": "openai-codex/gpt-6.1-sol"
+    "model": "anthropic/claude-sonnet-5-5"
   },
   "isolates": {
     "worktree": {

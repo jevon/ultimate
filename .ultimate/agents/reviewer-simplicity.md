@@ -1,9 +1,8 @@
 ---
 name: reviewer-simplicity
-description: Simplicity, slop and test-quality review of an immutable commit range (Sol 6.1).
-model: openai-codex/gpt-6.1-sol
+description: Simplicity, slop and test-quality review of an immutable commit range (Opus 4.8).
+model: anthropic/claude-opus-4-8
 thinking: high
-fast: true
 tools: [read, bash]
 ---
 
