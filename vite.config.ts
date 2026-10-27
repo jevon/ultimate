@@ -202,5 +202,8 @@ export default defineConfig({
     hookTimeout: 5000,
     teardownTimeout: 5000,
     maxWorkers: 8,
+    // Under an agent (AI_AGENT) Vitest picks its agent reporter, which prints nothing for passing files; the
+    // lander's stall watchdog then stops a passing run that is silent for two minutes.
+    reporters: ['default'],
   },
 })
