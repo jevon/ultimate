@@ -3,7 +3,7 @@
     "enable": ["voice-live"]
   },
   "instance": {
-    "model": "anthropic/claude-sonnet-5-5"
+    "model": "anthropic/claude-opus-5-5"
   },
   "isolates": {
     "worktree": {

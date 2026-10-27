@@ -1,7 +1,7 @@
 ---
 name: reviewer-architecture
-description: Advisory architecture review (Sonnet 5.5); asks whether a range uses Ultimate's own architecture instead of building beside it. Never blocks.
-model: anthropic/claude-sonnet-5-5
+description: Advisory architecture review (Opus 5.5); asks whether a range uses Ultimate's own architecture instead of building beside it. Never blocks.
+model: anthropic/claude-opus-5-5
 thinking: low
 tools: [read, bash]
 ---

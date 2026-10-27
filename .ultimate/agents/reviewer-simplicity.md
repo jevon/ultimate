@@ -1,7 +1,7 @@
 ---
 name: reviewer-simplicity
-description: Simplicity, slop and test-quality review of an immutable commit range (Opus 4.8).
-model: anthropic/claude-opus-4-8
+description: Simplicity, slop and test-quality review of an immutable commit range (Opus 5.5).
+model: anthropic/claude-opus-5-5
 thinking: high
 tools: [read, bash]
 ---
