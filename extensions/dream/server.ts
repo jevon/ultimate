@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context'
 import { defineDoc, defineExtension, ROOT_CONVERSATION_ID } from '@earendil-works/pi-durable'
-import type { Tx } from '@earendil-works/pi-durable'
+import type { TaskGraph, Tx } from '@earendil-works/pi-durable'
 import { implementAction } from '../../lib/actions.ts'
 import {
   chapterFiles,
@@ -48,6 +48,7 @@ import {
   compactionDream,
   ensureAutomation,
   HANDOFF_CHARS,
+  liveTasks,
 } from './before-compaction.ts'
 import type { Origin } from './before-compaction.ts'
 import type { PassName } from './types.ts'
@@ -533,21 +534,25 @@ export const actions = {
 
 /**
  * The user's Dream button: ask @ultimate for its handoff; the dream starts once it is recorded and nothing else works.
- * Refuses while other top-level conversations work (besides @ultimate), a session is open or a request waits.
+ * Refuses while other top-level conversations actively work (besides @ultimate), a session is open or a request waits.
  */
 export async function askHandoff(host: ExtensionHost) {
+  const tasks = await liveTasks(host)
+  // On its own: the refusal below rolls its transaction back, and a request whose wait faulted must look again.
+  await host.harness().commit((tx) => compaction(host).healed(tx), context)
   const task = await host.harness().commit(async (tx) => {
     const ultimate = (await tx.doc(Standing, ROOT_CONVERSATION_ID)).ultimate
     if (ultimate === undefined) throw new Error('@ultimate has no conversation yet')
-    refuseBusy(host, ultimate)
+    refuseBusy(host, ultimate, tasks)
     return (await compaction(host).request(tx, Date.now(), ultimate)).task
   }, context)
   host.harness().resume()
   return { task }
 }
 
-function refuseBusy(host: ExtensionHost, ultimate: number) {
-  const busy = busyElsewhere(host.conversations(), ultimate)
+/** A read-only dream waits only for conversations actively `working` in `tasks`; without them, for any `busy` one. */
+function refuseBusy(host: ExtensionHost, ultimate: number, tasks?: TaskGraph['tasks']) {
+  const busy = busyElsewhere(host.conversations(), ultimate, tasks)
   if (busy.length)
     throw new Error(
       `Wait for these to finish before dreaming: ${busy.map((item) => `#${item.id} ${item.title}`).join(', ')}`,
@@ -556,13 +561,18 @@ function refuseBusy(host: ExtensionHost, ultimate: number) {
 
 /**
  * Start a dream session inside `tx` for a handoff request (`origin`): the user's Dream button, or the built-in
- * automation (`origin.beforeCompaction`). Refuses while other top-level conversations work (besides @ultimate) or a
- * session is open.
+ * automation (`origin.beforeCompaction`). Refuses while other top-level conversations work (besides @ultimate: those
+ * actively working in the live `tasks`) or a session is open.
  */
-export async function startDreamIn(host: ExtensionHost, tx: Tx, origin: Origin = {}) {
+export async function startDreamIn(
+  host: ExtensionHost,
+  tx: Tx,
+  origin: Origin = {},
+  tasks?: TaskGraph['tasks'],
+) {
   const ultimate = (await tx.doc(Standing, ROOT_CONVERSATION_ID)).ultimate
   if (ultimate === undefined) throw new Error('@ultimate has no conversation yet')
-  refuseBusy(host, ultimate)
+  refuseBusy(host, ultimate, tasks)
   const session = await startSession(tx, Date.now(), origin)
   const before = origin.beforeCompaction
   const who = before
@@ -671,14 +681,15 @@ const compaction = (host: ExtensionHost) =>
   compactionDream(host, {
     Sessions,
     switching: () => switching(host).busy,
-    start: (tx, origin) => startDreamIn(host, tx, origin),
+    start: (tx, origin, tasks) => startDreamIn(host, tx, origin, tasks),
+    tasks: () => liveTasks(host),
   })
 
 /** Inside `tx`: the built-in automation's session that has just settled gets its "worth a fresh chapter?" check, once. */
 const settled = (host: ExtensionHost, tx: Tx, found: Session) => compaction(host).settled(tx, found)
 
 export default function dream(host: ExtensionHost) {
-  const { Wait, Retired, Settle, fired } = compaction(host)
+  const { Wait, Retired, Settle, fired, healed } = compaction(host)
   // One at a time, across facet reloads: two concurrent checks would both make the automation.
   const queue = host.resource('dream.after-compaction', () => ({ last: Promise.resolve() }))
   /** Queue a check behind the last one; a failure becomes a notice. */
@@ -695,6 +706,8 @@ export default function dream(host: ExtensionHost) {
     if (seed && !seed.gate)
       firstBackup(host).catch((error: unknown) => host.notice(`Chapter backup: ${String(error)}`))
     await ensure()
+    // A request whose wait faulted, as one did across a reload that changed its contract, looks again.
+    await host.harness().commit((tx) => healed(tx), context)
   })
   // A fresh project has no @ultimate when it opens: the automation follows once it exists. Outside the transaction:
   // making it commits.

@@ -2,7 +2,13 @@ import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context'
 import type { JsonValue } from '@earendil-works/chord'
 import { fauxProvider } from '@earendil-works/pi-ai/providers/faux'
 import { configure, ROOT_CONVERSATION_ID } from '@earendil-works/pi-durable'
-import type { ConversationId, Tx } from '@earendil-works/pi-durable'
+import type {
+  ConversationId,
+  TaskGraph,
+  TaskGraphNode,
+  TaskId,
+  Tx,
+} from '@earendil-works/pi-durable'
 import { afterEach, expect, it, vi } from 'vitest'
 import { writeJson } from '../lib/json-file.ts'
 import { prepareHarness } from '../server/harness.ts'
@@ -33,6 +39,7 @@ import {
   AUTOMATION_NAME,
   BuiltInDoc,
   compactionDream,
+  DREAM_LOOK_MS,
   DREAM_WAIT_MS,
   ensureAutomation,
   HANDOFF_WAIT_MS,
@@ -52,6 +59,24 @@ afterEach(async () => {
   vi.useRealTimers()
 })
 
+/** A live task as the task graph lists it. */
+function node(
+  id: number,
+  conversationId: number,
+  state: TaskGraphNode['state'],
+  background = false,
+): TaskGraphNode {
+  return {
+    id: id as TaskId,
+    kind: 'pi.generation',
+    conversationId: conversationId as ConversationId,
+    background,
+    abortRequested: false,
+    state,
+    conversations: [],
+  }
+}
+
 async function fixture() {
   const home = await temp('ultimate-dream-compaction-')
   const prepared = await prepareHarness({
@@ -65,7 +90,19 @@ async function fixture() {
   const tokens = [...lineageDocs, Messages, Todos, Sessions]
   const resources = new Map<string, unknown>()
   const events = eventHost(() => opened.harness, 'test')
-  let busy: { id: number; busy: boolean; title: string }[] = []
+  let busy: { id: number; busy: boolean; title: string; parentConversationId?: number }[] = []
+  /** The live tasks the wait reads; by default each busy conversation runs a model response. */
+  let tasks: TaskGraph['tasks'] | undefined
+  const graphOf = (): TaskGraph['tasks'] =>
+    tasks ??
+    Object.fromEntries(
+      busy
+        .filter((item) => item.busy)
+        .map((item, index) => [
+          String(900 + index),
+          node(900 + index, item.id, { status: 'running', phase: 'request' }),
+        ]),
+    )
   const notes: { to: number; text: string }[] = []
   const leaveNote = vi.fn<
     (to: number, text: string, options?: { requestId: string }) => Promise<void>
@@ -193,7 +230,9 @@ async function fixture() {
     Sessions,
     switching: () =>
       (resources.get('dream.switching') as { busy: boolean } | undefined)?.busy ?? false,
-    start: vi.fn<(tx: Tx, origin: Origin) => Promise<{ session: number }>>(),
+    start:
+      vi.fn<(tx: Tx, origin: Origin, tasks: TaskGraph['tasks']) => Promise<{ session: number }>>(),
+    tasks: async () => graphOf(),
   }
   return {
     host,
@@ -218,6 +257,9 @@ async function fixture() {
     deps,
     busy: (items: typeof busy) => {
       busy = items
+    },
+    tasks: (items: TaskGraph['tasks'] | undefined) => {
+      tasks = items
     },
     settle: () => until(events.settled),
     action: (name: keyof typeof automationActions, args: JsonValue = {}) =>
@@ -330,7 +372,7 @@ it('fires once at 70% and re-arms below 60%, asking for one handoff per fire', a
 it('starts the analysis once the handoff is recorded and nothing else works, carrying the handoff', async () => {
   const f = await fixture()
   const { look, request } = compactionDream(f.host, f.deps)
-  f.deps.start.mockImplementation((tx, origin) => startDreamIn(f.host, tx, origin))
+  f.deps.start.mockImplementation((tx, origin, tasks) => startDreamIn(f.host, tx, origin, tasks))
   const id = (await f.own())!
   const { task } = await f.harness.commit(
     (tx) => request(tx, 0, f.ultimate, { id, name: AUTOMATION_NAME }),
@@ -367,7 +409,7 @@ it('starts the analysis once the handoff is recorded and nothing else works, car
 it('starts without a handoff after 30 minutes and says so, and gives up after two hours with a quiet note', async () => {
   const f = await fixture()
   const { look, request } = compactionDream(f.host, f.deps)
-  f.deps.start.mockImplementation((tx, origin) => startDreamIn(f.host, tx, origin))
+  f.deps.start.mockImplementation((tx, origin, tasks) => startDreamIn(f.host, tx, origin, tasks))
   const first = await f.harness.commit((tx) => request(tx, 0, f.ultimate), context)
   expect(await look(first.task, HANDOFF_WAIT_MS - 1)).toBe('look')
   expect(await look(first.task, HANDOFF_WAIT_MS)).toBe('started')
@@ -394,6 +436,107 @@ it('starts without a handoff after 30 minutes and says so, and gives up after tw
   expect(new Set(keys)).toEqual(new Set([`dream.handoff-wait:${second.task}`]))
   expect(f.notes.at(-1)).toEqual({ to: f.ultimate, text: expect.stringContaining('did not start') })
   expect(await f.sessions()).toHaveLength(1)
+  expect(await f.waiting()).toBeUndefined()
+})
+
+it('waits only for conversations actively working: a coordinator parked on its worker does not hold it', async () => {
+  const f = await fixture()
+  const { look, request } = compactionDream(f.host, f.deps)
+  f.deps.start.mockImplementation((tx, origin, tasks) => startDreamIn(f.host, tx, origin, tasks))
+  const { task: wait } = await f.harness.commit((tx) => request(tx, 0, f.ultimate), context)
+  await actions.handoff({ text: 'Handoff' }, f.call)
+  f.busy([
+    { id: 50, busy: true, title: 'A coordinator' },
+    { id: 51, busy: true, title: 'Its worker', parentConversationId: 50 },
+  ])
+  const response = (on: number) =>
+    node(1, 50, {
+      status: 'waiting',
+      phase: 'tools',
+      on: [on as TaskId],
+      policy: 'failFast',
+    })
+  // Its response waits on its own tool call, which runs (a polling bash, a foreground subagent wait): it works.
+  f.tasks({
+    1: response(2),
+    2: { ...node(2, 50, { status: 'running', phase: 'execute' }), kind: 'pi.tool' },
+  })
+  expect(await look(wait, 10)).toBe('look')
+  // Its response waits only on its worker's run, and its own background tasks wait: it does not work. The running
+  // worker is not top-level, as before.
+  f.tasks({
+    1: response(3),
+    3: node(3, 51, { status: 'running', phase: 'request' }),
+    4: node(4, 50, { status: 'sleeping', phase: 'look', until: 1 }, true),
+  })
+  expect(await look(wait, 20)).toBe('started')
+  expect(await f.sessions()).toHaveLength(1)
+})
+
+it('does not count a Pause or a stopped host against the wait: a late look moves both deadlines', async () => {
+  const f = await fixture()
+  const { look, request, Wait } = compactionDream(f.host, f.deps)
+  const { task: wait } = await f.harness.commit((tx) => request(tx, 0, f.ultimate), context)
+  /** The wait task's own look at `now`, due at `due`, as the scheduler runs it: its next sleep, or `ended`. */
+  const run = async (now: number, due?: number) => {
+    const runtime = {
+      now: () => now,
+      sleepUntil: vi.fn<(...args: unknown[]) => Promise<void>>(async () => {}),
+      commit: vi.fn<() => Promise<void>>(async () => {}),
+    }
+    const checkpoint = { phase: 'look' as const, ...(due === undefined ? {} : { due }) }
+    await Wait.definition.phases.look(
+      { id: String(wait), state: { status: 'running', checkpoint } } as never,
+      runtime as never,
+      context,
+    )
+    return runtime.sleepUntil.mock.calls[0]?.slice(0, 2) ?? 'ended'
+  }
+  expect(await run(10)).toEqual([10 + DREAM_LOOK_MS, { phase: 'look', due: 10 + DREAM_LOOK_MS }])
+  // Held by Pause for ten hours, 25 minutes after the request: that look comes ten hours late. It does not give up,
+  // and no handoff yet still means waiting for one: neither deadline counted the pause.
+  const pause = 10 * 3600_000
+  const at = 25 * 60_000
+  expect(await run(at + pause, at)).toEqual([at + pause + DREAM_LOOK_MS, expect.anything()])
+  expect(await f.waiting()).toMatchObject({ task: wait, unseen: pause })
+  expect((await f.waiting())?.gaveUp).toBeUndefined()
+  // Another conversation keeps working. A look a little late (a busy host) changes nothing.
+  f.busy([{ id: 50, busy: true, title: 'A branch at work' }])
+  const late = pause + HANDOFF_WAIT_MS
+  expect(await run(late, late - 30_000)).not.toBe('ended')
+  expect((await f.waiting())?.unseen).toBe(pause)
+  // Two hours of looking after the request, it still gives up.
+  expect(await look(wait, pause + DREAM_WAIT_MS - 1)).toBe('look')
+  expect(await look(wait, pause + DREAM_WAIT_MS)).toBe('done')
+  expect(f.notes.at(-1)).toEqual({ to: f.ultimate, text: expect.stringContaining('did not start') })
+  expect(await f.waiting()).toBeUndefined()
+  expect(f.deps.start).not.toHaveBeenCalled()
+})
+
+it('gives a request whose wait faulted a new wait, keeping its handoff, and ends one whose wait was aborted', async () => {
+  const f = await fixture()
+  const { healed } = compactionDream(f.host, f.deps)
+  // The live wait faulted when a reload changed its contract mid-edit: its request blocked every later dream.
+  const lost = { at: 5, task: 424242, handoff: { text: 'Handoff', at: 6 } }
+  await f.harness.commit(async (tx) => {
+    ;(await tx.doc(Sessions, ROOT_CONVERSATION_ID)).waiting = { ...lost }
+  }, context)
+  // The user presses Dream: the request looks again, and still waits.
+  await expect(actions.start(null, f.call)).rejects.toThrow('already waits')
+  const [wait] = await f.waits()
+  expect(await f.waiting()).toEqual({ ...lost, task: Number(wait.id) })
+  // A live wait stays as it is.
+  await f.harness.commit((tx) => healed(tx).then(() => undefined), context)
+  expect(await f.waits()).toHaveLength(1)
+  expect((await f.waiting())?.task).toBe(Number(wait.id))
+  // Aborted by hand: the request goes, and a new one may start.
+  f.host.harness().resume()
+  await f.harness.abortTask(wait.id, context)
+  await until(
+    async () =>
+      (await f.harness.commit((tx) => tx.task(wait.id), context))?.state.status === 'terminal',
+  )
+  await f.harness.commit((tx) => healed(tx).then(() => undefined), context)
   expect(await f.waiting()).toBeUndefined()
 })
 

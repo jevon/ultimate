@@ -30,6 +30,7 @@ import { implementAction } from '../../lib/actions.ts'
 import { spawnGroup, stopGroup } from '../../lib/process-group.ts'
 import type { Group, GroupProcess } from '../../lib/process-group.ts'
 import { InstanceApi } from './api.ts'
+import { Previews } from '../conversations/api.ts'
 import { ListAction } from './refs.ts'
 import type { JsonObject } from '@earendil-works/pi-durable'
 import { readSettings, userSettingsPath } from '../../lib/settings.ts'
@@ -472,6 +473,21 @@ export default function instanceExtension(
         project: host.projectRoot,
       })),
     stop: (id) => stop(instances, id),
+  })
+  // Concluding a conversation stops the previews it started; previews outlive an ordinary stop of its run.
+  host.implement(Previews, {
+    stop: async (ids) => {
+      const concluded = new Set(ids)
+      const ended = []
+      // Deleting the visited entry while iterating a Map is safe.
+      for (const item of instances.values()) {
+        if (item.conversationId === undefined || !concluded.has(item.conversationId)) continue
+        await stop(instances, item.id)
+        if (item.url) remember(host, item)
+        ended.push(item.id)
+      }
+      return ended
+    },
   })
   return defineExtension({
     name: 'instance',

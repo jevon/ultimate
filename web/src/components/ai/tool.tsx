@@ -171,6 +171,7 @@ export const ToolDiagnostics = ({
                 ? 'text-warning'
                 : 'text-muted-foreground',
           )}
+          // oxlint-disable-next-line react/no-array-index-key -- Result diagnostics have no id and may repeat.
           key={index}
         >
           {diagnostic.message}
@@ -223,6 +224,7 @@ export const ToolImages = ({
     <ToolSection label={images.length > 1 ? `${images.length} images` : 'Image'} {...props}>
       <div className="flex flex-wrap gap-2">
         {images.map((image, index) => (
+          // oxlint-disable-next-line react/no-array-index-key -- Fixed result images may contain duplicates.
           <ToolImage image={image} key={index} />
         ))}
       </div>

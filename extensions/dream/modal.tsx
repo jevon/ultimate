@@ -2,7 +2,15 @@ import { LoaderCircleIcon, MoonIcon } from 'lucide-react'
 import { Fragment, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { api, errorMessage, useConversations, useDialog, useDocOf, useUltimate } from '@/sdk'
+import {
+  api,
+  errorMessage,
+  useConversations,
+  useDialog,
+  useDocOf,
+  useTasks,
+  useUltimate,
+} from '@/sdk'
 import { ConversationRef } from '../conversations/ui.tsx'
 import { StandingDoc, talkToUltimate } from '../subagents/ui.tsx'
 import { DreamDoc, StartAction } from './refs.ts'
@@ -38,17 +46,18 @@ export function DreamDialog() {
   )
 }
 
-/** What keeps a dream from starting, live: conversations at work besides @ultimate, or a session still open. */
+/** What keeps a dream from starting, live: conversations actively at work besides @ultimate, or a session still open. */
 type Preflight = { busy: { id: number; title: string }[]; active?: number }
 
 function usePreflight(): Preflight | undefined {
   const conversations = useConversations()
+  const tasks = useTasks()?.tasks
   const standing = useDocOf(1, StandingDoc)
   const sessions = useDocOf(1, DreamDoc)
   if (standing === undefined || sessions === undefined) return undefined
   const active = sessions?.sessions.find((item) => item.endedAt === undefined)?.id
   return {
-    busy: busyElsewhere(conversations, standing?.ultimate),
+    busy: busyElsewhere(conversations, standing?.ultimate, tasks),
     ...(active === undefined ? {} : { active }),
   }
 }

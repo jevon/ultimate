@@ -308,6 +308,7 @@ function Steps({
             active={running && inProgress(row, rows.slice(index + 1))}
             done={index < rows.length - 1 || ended === 'landed'}
             failed={ended === 'failed' && index === rows.length - 1}
+            // oxlint-disable-next-line react/no-array-index-key -- Progress rows have no id; steps and times may repeat.
             key={index}
             row={row}
             took={took(row, index)}

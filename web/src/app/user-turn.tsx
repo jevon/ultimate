@@ -90,6 +90,7 @@ export function UserView({
           {images.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {images.map((image, index) => (
+                // oxlint-disable-next-line react/no-array-index-key -- Fixed message attachments may contain duplicates.
                 <ToolImage alt={`Attached image ${index + 1}`} image={image} key={index} />
               ))}
             </div>

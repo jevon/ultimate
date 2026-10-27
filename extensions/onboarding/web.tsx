@@ -90,12 +90,15 @@ function Onboarding() {
         }}
       />
       {error && (
-        <div
-          role="alert"
-          className="fixed right-4 bottom-12 rounded border border-error/40 bg-card p-3 text-xs text-error"
-          onClick={() => setError(undefined)}
-        >
-          {error}
+        <div className="fixed right-4 bottom-12" role="alert">
+          <button
+            className="cursor-pointer rounded border border-error/40 bg-card p-3 text-left text-xs text-error"
+            onClick={() => setError(undefined)}
+            title="Dismiss"
+            type="button"
+          >
+            {error}
+          </button>
         </div>
       )}
     </>

@@ -68,6 +68,11 @@ export type Handoff = { task: number; text?: string; at?: number; missing?: stri
 export type Waiting = {
   at: number
   task: number
+  /**
+   * Time (ms) the wait could not look, its host paused or down: its deadlines count from `at` plus this, so a Pause
+   * or a restart does not use them up.
+   */
+  unseen?: number
   gaveUp?: true
   /** `pause`: how long the user had been away (ms) when "Dream after a pause" fired. */
   automation?: { id: string; name: string; pause?: number }

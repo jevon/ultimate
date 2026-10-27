@@ -96,6 +96,7 @@ export function ImagePreviews({
   return images.length > 0 ? (
     <div className={cn('flex flex-wrap gap-2 px-3 pt-3', className)}>
       {images.map((image, index) => (
+        // oxlint-disable-next-line react/no-array-index-key -- Pasted images have no id and may repeat.
         <div className="relative" key={index}>
           <ToolImage
             alt={`Pasted image ${index + 1}`}

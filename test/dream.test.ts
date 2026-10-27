@@ -10,7 +10,7 @@ import {
   ROOT_CONVERSATION_ID,
 } from '@earendil-works/pi-durable'
 import type { JsonValue } from '@earendil-works/chord'
-import type { Tx } from '@earendil-works/pi-durable'
+import type { ConversationId, TaskGraphNode, TaskId, Tx } from '@earendil-works/pi-durable'
 import { expect, it } from 'vitest'
 import type { ActionContext } from '../server/actions.ts'
 import type { ExtensionHost } from '../server/extensions.ts'
@@ -27,7 +27,7 @@ import dream, {
   startSession,
   toolStats,
 } from '../extensions/dream/server.ts'
-import { busyElsewhere } from '../extensions/dream/types.ts'
+import { busyElsewhere, working } from '../extensions/dream/types.ts'
 import { temp, until } from './helpers.ts'
 
 /** A transaction over plain documents, keyed by kind and conversation. */
@@ -205,6 +205,46 @@ it('counts top-level conversations at work besides @ultimate', () => {
       5,
     ),
   ).toEqual([{ id: 8, title: 'Fix it' }])
+})
+
+it('counts only conversations actively working once given the live tasks', () => {
+  const node = (
+    id: number,
+    conversationId: number,
+    state: TaskGraphNode['state'],
+    kind = 'pi.generation',
+    background = false,
+  ): TaskGraphNode => ({
+    id: id as TaskId,
+    kind,
+    conversationId: conversationId as ConversationId,
+    background,
+    abortRequested: false,
+    state,
+    conversations: [],
+  })
+  const waits = (on: number) =>
+    ({ status: 'waiting', phase: 'tools', on: [on as TaskId], policy: 'failFast' }) as const
+  const running = { status: 'running', phase: 'execute' } as const
+  const tasks = Object.fromEntries(
+    [
+      // 8 waits on its worker 30's run; 9 on its own running tool; 10 answers; 11 only has background work; 12 sleeps.
+      node(1, 8, waits(7)),
+      node(7, 30, running),
+      node(2, 9, waits(3)),
+      node(3, 9, running, 'pi.tool'),
+      node(4, 10, { status: 'running', phase: 'request' }),
+      node(5, 11, running, 'dream.handoff-wait', true),
+      node(6, 12, { status: 'sleeping', phase: 'retry', until: 1 }),
+    ].map((item) => [item.id, item]),
+  )
+  const conversations = [8, 9, 10, 11, 12].map((id) => ({ id, busy: true, title: `#${id}` }))
+  conversations.push({ id: 30, busy: true, title: 'Worker', parentConversationId: 8 } as never)
+  expect(busyElsewhere(conversations, 5, tasks).map((item) => item.id)).toEqual([9, 10])
+  // A running worker works, though it is not top-level; without the tasks every busy one counts, as a switch needs.
+  expect(working(tasks, 30)).toBe(true)
+  expect(working(tasks, 8)).toBe(false)
+  expect(busyElsewhere(conversations, 5).map((item) => item.id)).toEqual([8, 9, 10, 11, 12])
 })
 
 it('reads tool numbers from the trace, with unused tools and frequent errors', async () => {

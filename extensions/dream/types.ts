@@ -2,6 +2,7 @@ import type { ConversationSummary } from '../../shared/protocol.ts'
 import type { MemoryItem } from '../lineage/refs.ts'
 import type { Todo } from '../todos/refs.ts'
 import type { ModelThinkingLevel } from '@earendil-works/pi-ai'
+import type { TaskGraph } from '@earendil-works/pi-durable'
 import type { CreateArgs, Schedule } from '../automations/refs.ts'
 import type { Journal, Proposal, Session, Waiting } from './refs.ts'
 
@@ -60,11 +61,38 @@ export type Seed = {
 export const PASSES = ['memory', 'failures', 'tools', 'corrections', 'codify', 'project'] as const
 export type PassName = (typeof PASSES)[number]
 
-/** Top-level conversations at work besides @ultimate: a dream reads finished work, not work in progress. */
-export function busyElsewhere(conversations: readonly ConversationSummary[], ultimate?: number) {
+/**
+ * Top-level conversations at work besides @ultimate: a dream reads finished work, not work in progress. Without
+ * `tasks`, every conversation with a foreground task counts (`busy`), as a chapter switch needs: it parks whatever
+ * is live. With the live `tasks`, only those `working` count, as starting a read-only dream needs.
+ */
+export function busyElsewhere(
+  conversations: readonly ConversationSummary[],
+  ultimate?: number,
+  tasks?: TaskGraph['tasks'],
+) {
   return conversations
-    .filter((item) => item.busy && item.id !== ultimate && item.parentConversationId === undefined)
+    .filter(
+      (item) =>
+        (tasks ? working(tasks, item.id) : item.busy) &&
+        item.id !== ultimate &&
+        item.parentConversationId === undefined,
+    )
     .map((item) => ({ id: item.id, title: item.title ?? `#${item.id}` }))
+}
+
+/**
+ * Whether conversation `id` actively works: one of its own foreground tasks runs or is about to (a model response, a
+ * tool call). A task that only waits, on other conversations' work (subagents, reporters, the lander) or on nothing
+ * live, or that sleeps, does not count by itself; a response waiting on its own running tool counts through the tool.
+ */
+export function working(tasks: TaskGraph['tasks'], id: number) {
+  return Object.values(tasks).some(
+    (task) =>
+      task.conversationId === id &&
+      !task.background &&
+      (task.state.status === 'running' || task.state.status === 'pending'),
+  )
 }
 
 /**

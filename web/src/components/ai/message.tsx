@@ -79,6 +79,7 @@ export function MentionText({ text }: { text: string }) {
     typeof part === 'string' ? (
       part
     ) : (
+      // oxlint-disable-next-line react/no-array-index-key -- Mention positions in split text; mentions may repeat.
       <Link href={mentionHref(part.conversation, part.entry)} key={index}>
         {part.text}
       </Link>

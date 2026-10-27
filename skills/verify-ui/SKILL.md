@@ -28,7 +28,11 @@ Never claim a UI change works without an image of it.
   `{until: 'idle'}` returns when that turn is done, `{until: 'quiet'}` when nothing runs (branches and subagents
   included), `{until: {entry: 'pi.tool-result'}}` or `{until: {event: 'workspaces.landed', where: {…}}}` when that
   appears. A timeout says what was still busy. `conversation: <id>` targets another conversation. Click and fill only
-  when the interaction itself is under test.
+  when the interaction itself is under test; never a fixed `wait <ms>`.
+- Set up state (model, thinking, Play/Pause, abort) through the page's SDK in one `eval`, or curl the preview's HTTP
+  API, not by clicking menus: `{eval: "window.ultimate.api.configure({model: {provider: 'openai-codex', modelId:
+  'gpt-6.1-sol'}}, 2)"}`. Also `api.abort(id)`, `api.compact(undefined, id)`, `api.action({extension: 'pause', name:
+  'play'}, null)`; `extensions/browser/README.md` has the rest.
 - `where` matches only fields the event carries, and events never carry text: after a send, match
   `{event: 'user.input', where: {conversation: <id>, kind: 'prompt'}}`, not the prompt. Each event's fields are in
   `extensions/browser/README.md` and its `defineEvent`. Tool calls live inside `pi.assistant`; there is no

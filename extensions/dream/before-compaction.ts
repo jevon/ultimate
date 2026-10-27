@@ -16,7 +16,14 @@ import {
   defineTask,
   ROOT_CONVERSATION_ID,
 } from '@earendil-works/pi-durable'
-import type { ConversationId, Cursor, JsonObject, Tx } from '@earendil-works/pi-durable'
+import type {
+  ConversationId,
+  Cursor,
+  JsonObject,
+  TaskGraph,
+  TaskId,
+  Tx,
+} from '@earendil-works/pi-durable'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { readJson } from '../../lib/json-file.ts'
@@ -104,6 +111,8 @@ const BUILT_INS: BuiltIn[] = [
 /** How long a dream waits for every other conversation to finish, and how often it looks. */
 export const DREAM_WAIT_MS = 2 * 3600_000
 export const DREAM_LOOK_MS = 15_000
+/** A look this late did not see the time between: the host was paused or down, and that time does not count. */
+export const DREAM_LATE_MS = 4 * DREAM_LOOK_MS
 /** How long a dream waits for @ultimate's handoff before it starts without one. */
 export const HANDOFF_WAIT_MS = 30 * 60_000
 
@@ -240,6 +249,16 @@ export async function compactionSummary(tx: Tx, id: ConversationId) {
   return undefined
 }
 
+/** Every live task, read outside a transaction: who actively works (`working`) while a dream is asked or waits. */
+export async function liveTasks(host: Pick<ExtensionHost, 'harness'>) {
+  const graph = await host.harness().taskGraph(context)
+  try {
+    return graph.value.tasks
+  } finally {
+    graph.dispose()
+  }
+}
+
 /** Why no dream may start now: a session open, a sleep under way, or a chapter change running. */
 function blocked(sessions: Session[], switching: boolean) {
   if (switching) return 'A chapter change is running'
@@ -263,8 +282,10 @@ export function compactionDream(
     Sessions: typeof import('./server.ts').Sessions
     /** Whether a chapter change holds the lock now. */
     switching: () => boolean
-    /** Start a session for a handoff request, as `origin` says. */
-    start: (tx: Tx, origin: Origin) => Promise<{ session: number }>
+    /** Start a session for a handoff request, as `origin` says, refusing while one of `tasks` works elsewhere. */
+    start: (tx: Tx, origin: Origin, tasks: TaskGraph['tasks']) => Promise<{ session: number }>
+    /** Every live task, as `liveTasks` reads them. */
+    tasks: () => Promise<TaskGraph['tasks']>
   },
 ) {
   const done = {
@@ -281,12 +302,14 @@ export function compactionDream(
   }
 
   /**
-   * One look of wait `task`: `look` again while the handoff is still due, or another top-level conversation works and
-   * time is left; `started` once the session started; `done` when no dream may start (another request replaced this
-   * one, its automation paused or deleted, a session open, a sleep or a chapter change) or the wait ran out, which
-   * leaves @ultimate a quiet note. Every check and the start commit together.
+   * One look of wait `task`: `look` again while the handoff is still due, or another top-level conversation actively
+   * works and time is left; `started` once the session started; `done` when no dream may start (another request
+   * replaced this one, its automation paused or deleted, a session open, a sleep or a chapter change) or the wait ran
+   * out, which leaves @ultimate a quiet note. Every check and the start commit together. `late` is how long after its
+   * due time this look runs: beyond `DREAM_LATE_MS` the host was paused or down, and that time counts as unseen.
    */
-  async function look(task: number, now: number) {
+  async function look(task: number, now: number, late = 0) {
+    const tasks = await deps.tasks()
     const next = await host.harness().commit(async (tx) => {
       const doc = await tx.doc(deps.Sessions, ROOT_CONVERSATION_ID)
       const waiting = doc.waiting
@@ -295,18 +318,20 @@ export function compactionDream(
         delete doc.waiting
         return result
       }
-      // Expired first: a host that wakes long after the deadline gives up instead of starting a stale dream. The
+      if (late > DREAM_LATE_MS) waiting.unseen = (waiting.unseen ?? 0) + late
+      const since = waiting.at + (waiting.unseen ?? 0)
+      // Expired first: a wait that saw its whole deadline pass gives up instead of starting a stale dream. The
       // request stays, marked, until its note is left: a crash in between leaves the note on the next look.
-      if (waiting.gaveUp || now >= waiting.at + DREAM_WAIT_MS) {
+      if (waiting.gaveUp || now >= since + DREAM_WAIT_MS) {
         waiting.gaveUp = true
         return 'gave up'
       }
       const automation = waiting.automation && (await enabled(tx, waiting.automation.id))
       const ultimate = (await tx.doc(Standing, ROOT_CONVERSATION_ID)).ultimate
       if ((waiting.automation && !automation) || ultimate === undefined) return stop('done')
-      if (!waiting.handoff && now < waiting.at + HANDOFF_WAIT_MS) return 'look'
+      if (!waiting.handoff && now < since + HANDOFF_WAIT_MS) return 'look'
       if (blocked(doc.sessions, deps.switching())) return stop('done')
-      if (busyElsewhere(host.conversations(), ultimate).length) return 'look'
+      if (busyElsewhere(host.conversations(), ultimate, tasks).length) return 'look'
       const pause = waiting.automation?.pause
       const handoff: Handoff = waiting.handoff
         ? { task, text: waiting.handoff.text, at: waiting.handoff.at }
@@ -315,19 +340,23 @@ export function compactionDream(
             missing: `no handoff within ${HANDOFF_WAIT_MS / 60_000} minutes of the request`,
           }
       delete doc.waiting
-      await deps.start(tx, {
-        handoff,
-        ...(automation
-          ? {
-              beforeCompaction: {
-                automation: automation.id,
-                name: automation.name,
-                at: now,
-                ...(pause !== undefined ? { pause } : {}),
-              },
-            }
-          : {}),
-      })
+      await deps.start(
+        tx,
+        {
+          handoff,
+          ...(automation
+            ? {
+                beforeCompaction: {
+                  automation: automation.id,
+                  name: automation.name,
+                  at: now,
+                  ...(pause !== undefined ? { pause } : {}),
+                },
+              }
+            : {}),
+        },
+        tasks,
+      )
       return 'started'
     }, context)
     if (next === 'started') host.harness().resume()
@@ -370,22 +399,60 @@ export function compactionDream(
       runtime.commit(() => ({ status: 'terminal', outcome: { status: 'aborted' } }), ctx),
   })
 
-  /** One request's wait: a look every 15 seconds, for the handoff and then for idle, up to two hours in all. */
-  const Wait = defineTask<{ at: number }, { phase: 'look' }, null>({
+  /**
+   * One request's wait: a look every 15 seconds, for the handoff and then for idle, up to two hours of looking in all.
+   * `due` is when the next look should run: a Pause or a stopped host makes it late, and the time it missed does not
+   * count.
+   */
+  const Wait = defineTask<{ at: number }, { phase: 'look'; due?: number }, null>({
     name: 'dream.handoff-wait',
     version: 1,
     initial: () => ({ phase: 'look' }),
     phases: {
       look: async (task, runtime, ctx) => {
         const now = runtime.now()
-        if ((await look(Number(task.id), now)) === 'look')
-          return runtime.sleepUntil(now + DREAM_LOOK_MS, { phase: 'look' }, ctx)
+        const due = task.state.checkpoint.due
+        if ((await look(Number(task.id), now, due === undefined ? 0 : now - due)) === 'look')
+          return runtime.sleepUntil(
+            now + DREAM_LOOK_MS,
+            { phase: 'look', due: now + DREAM_LOOK_MS },
+            ctx,
+          )
         await runtime.commit(() => done, ctx)
       },
     },
     abort: (_task, runtime, ctx) =>
       runtime.commit(() => ({ status: 'terminal', outcome: { status: 'aborted' } }), ctx),
   })
+
+  /**
+   * Inside `tx`: the request waiting, once its wait is live. A wait that faulted or is gone (a broken reload, a lost
+   * task) would leave the request blocking every later dream with nothing looking: it gets a new wait, keeping its
+   * handoff and deadlines. An aborted wait ends its request.
+   */
+  async function healed(tx: Tx) {
+    const doc = await tx.doc(deps.Sessions, ROOT_CONVERSATION_ID)
+    const waiting = doc.waiting
+    if (!waiting) return undefined
+    const state = (await tx.task(waiting.task as TaskId))?.state
+    if (state && state.status !== 'terminal') return waiting
+    if (state?.outcome.status === 'aborted') {
+      delete doc.waiting
+      return undefined
+    }
+    waiting.task = Number(
+      await tx.createTask(
+        Wait,
+        { at: waiting.at },
+        {
+          conversationId: ROOT_CONVERSATION_ID,
+          ownership: { kind: 'conversation' },
+          background: true,
+        },
+      ),
+    )
+    return waiting
+  }
 
   /**
    * Inside `tx`: record a request for @ultimate's handoff, start its wait and ask conversation `ultimate` for it.
@@ -491,7 +558,8 @@ export function compactionDream(
     if (!builtIn) return
     const doc = await tx.doc(deps.Sessions, ROOT_CONVERSATION_ID)
     const ultimate = (await tx.doc(Standing, ROOT_CONVERSATION_ID)).ultimate
-    if (ultimate === undefined || doc.waiting || blocked(doc.sessions, deps.switching())) return
+    if (ultimate === undefined || (await healed(tx)) || blocked(doc.sessions, deps.switching()))
+      return
     const automation = await host.want(AutomationsApi)?.read(tx, id)
     const condition = automation?.condition
     await request(tx, now, ultimate, {
@@ -521,5 +589,5 @@ export function compactionDream(
     )
   }
 
-  return { Wait, Retired, Settle, fired, request, settled, look, settle }
+  return { Wait, Retired, Settle, fired, request, settled, look, settle, healed }
 }

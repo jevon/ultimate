@@ -1,4 +1,5 @@
-// `window.ultimate` on pages the browser tool drives: send input and wait on Ultimate's state instead of on time.
+// `window.ultimate` on pages the browser tool drives: send input, set up state through the page's SDK `api` and wait on
+// Ultimate's state instead of on time.
 import type { EventRecord } from '../../../shared/events.ts'
 import { EVENT_FEED } from '../../../shared/events.ts'
 import type { Api } from './api.ts'
@@ -85,6 +86,11 @@ export function createTestHook(store: Store, api: Api) {
   }
 
   return {
+    /**
+     * The page's SDK client, for setting up state without clicking through the UI: `api.configure({model}, id)`,
+     * `api.abort(id)`, `api.compact(undefined, id)`, `api.action({extension: 'pause', name: 'play'}, null)`.
+     */
+    api,
     /** The shown conversation, every conversation's busy flag and the shown view's entry kinds. */
     async state() {
       await ready()

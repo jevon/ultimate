@@ -66,13 +66,23 @@ event), never by threshold or subscribers, so it is never made twice.
   handoff with `handoff {text}` (nonempty, at most 12,000 characters; a later call replaces it while the request
   waits).
 - **Start.** The wait looks every 15 seconds. It starts the session through `startDreamIn` once the handoff is
-  recorded, or 30 minutes after the request without one, and no top-level conversation other than @ultimate works
-  (every refusal of the Dream button applies). The session records `handoff {task, text, at}` or `{task, missing}`
-  and, for the automation, `beforeCompaction {automation, name, at}`; the `dream.started` input and card
-  say whether the handoff came. Two hours after the request the wait gives up (`waiting.gaveUp`, kept until the note
-  is left, so a crash in between leaves it on the next look) and leaves @ultimate a quiet note through lineage's
-  `leaveNote`; a paused or deleted automation ends it. The user decided this read-only analysis runs by default; the
-  user-only `start` stays user-only.
+  recorded, or 30 minutes after the request without one, and no top-level conversation other than @ultimate actively
+  works (every refusal of the Dream button applies). Actively working (`working` in `types.ts`, from the live task
+  graph) means one of the conversation's own foreground tasks is running or pending: a model response, or a tool call
+  (a response waiting on its own running tool counts through the tool, so a polling `bash` or a foreground `subagent`
+  wait still counts). A foreground task that only waits on other conversations' tasks or sleeps does not, and
+  background tasks never do; the Dream button and its dialog use the same rule. Owned subagents are not top-level and
+  never held a dream. The chapter switch (`asleep`, `switch`) keeps the strict rule below. The session records
+  `handoff {task, text, at}` or `{task, missing}` and, for the automation, `beforeCompaction {automation, name, at}`;
+  the `dream.started` input and card say whether the handoff came. Two hours of looking after the request the wait
+  gives up (`waiting.gaveUp`, kept until the note is left, so a crash in between leaves it on the next look) and
+  leaves @ultimate a quiet note through lineage's `leaveNote`; a paused or deleted automation ends it. Time the wait
+  could not look does not count: each look is due 15 seconds after the last (`due` in the task's checkpoint), and a
+  look more than a minute late (a host Pause holds the scheduler, or the host was down) adds its lateness to
+  `waiting.unseen`, which moves both the 30-minute handoff wait and the two-hour limit. A request whose wait task
+  faulted or is gone (`healed`: on open and each reload, on the Dream button, and on a built-in fire) gets a new wait
+  that keeps its handoff and deadlines, instead of blocking every later dream; an aborted wait ends its request. The
+  user decided this read-only analysis runs by default; the user-only `start` stays user-only.
 - **Deciding.** The user decides the proposals, as for any dream; only during a hands-off goal does @ultimate decide
   them in the user's place, recording each with `decide {…, reason}` (the journal shows it). The rule lives in
   DREAM.md and `agents/ultimate.md`.
@@ -134,8 +144,8 @@ own open hook. There is no user-script adoption path: each enabled user script b
 ### Fall asleep and switch
 
 `asleep` refuses without a journal, with open or approved proposals, or while other top-level conversations besides
-@ultimate are busy. Names use `chapterName`; an existing name must use `switch`, never overwrite its seed. Chapter
-changes are serialized. Each progress update commits separately on the session as `sleep`: `seeding`, `checking`,
+@ultimate are busy: any foreground task counts here, waiting ones included, since a switch parks whatever is live.
+Names use `chapterName`; an existing name must use `switch`, never overwrite its seed. Chapter changes are serialized. Each progress update commits separately on the session as `sleep`: `seeding`, `checking`,
 `backing up`, `switching`, or `failed`, with the gate checks, backup id or skip reason, error, and timestamp.
 
 The gate writes a real seed and switch journal in a temporary home, starts it through optional `InstanceApi`, and

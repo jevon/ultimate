@@ -345,6 +345,7 @@ function Lanes({ rows, room, id }: { rows: Row[]; room: number; id: number }) {
       {slots.map((slot, index) => (
         <div
           className={cn('absolute right-0 left-0', activeSlot === index && 'bg-foreground/5')}
+          // oxlint-disable-next-line react/no-array-index-key -- Packed slots are positional; marks can share an entry.
           key={`${slot.rows[0].mark.entry}:${index}`}
           style={{ top: 4 + index * gap, height: gap }}
         >

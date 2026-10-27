@@ -71,3 +71,13 @@ it('until idle counts a turn too short to show busy by its answer, and times out
   await vi.advanceTimersByTimeAsync(1000)
   expect(String(await late)).toContain('Timed out after 1s: #1 is still busy')
 })
+
+it('exposes the page api, so a driven page sets up state with one call', async () => {
+  const { hook, fetch } = setup()
+  await hook.api.configure({ model: { provider: 'openai-codex', modelId: 'gpt-6.1-sol' } }, 1)
+  const [url, init] = fetch.mock.calls.at(-1)!
+  expect(url).toBe('/api/conversations/1/configure')
+  expect(JSON.parse(init?.body as string)).toEqual({
+    model: { provider: 'openai-codex', modelId: 'gpt-6.1-sol' },
+  })
+})

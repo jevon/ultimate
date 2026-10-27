@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { hostname } from 'node:os'
 import { join, resolve } from 'node:path'
 import { awaitWithContext } from '@earendil-works/chord/context'
 import { fauxAssistantMessage, fauxText, fauxToolCall } from '@earendil-works/pi-ai/providers/faux'
@@ -1806,7 +1807,8 @@ async function remoteFixture(url?: string) {
   })
   return f
 }
-const from = { project: 'poe2-rust', machine: 'rog' }
+// The sender runs on this machine, so its answer routes back to the local poe2-rust instance.
+const from = { project: 'poe2-rust', machine: hostname() }
 it("delivers another Ultimate's message to @ultimate only, labelled as it, once per key", async () => {
   const other = await otherUltimate(() => [200, { result: 7 }])
   const f = await remoteFixture(other.url)
@@ -1823,7 +1825,7 @@ it("delivers another Ultimate's message to @ultimate only, labelled as it, once 
   expect(f.observed.filter((text) => text.includes('Start a branch that adds X'))).toHaveLength(1)
   const delivered = f.observed.find((text) => text.includes('Start a branch'))!
   expect(delivered).toContain(
-    "Message from @ultimate@poe2-rust on rog (another project's Ultimate, not the user):",
+    `Message from @ultimate@poe2-rust on ${hostname()} (another project's Ultimate, not the user):`,
   )
   expect(f.observed.some((text) => text.includes('Start a branch') && text !== delivered)).toBe(
     false,

@@ -7,11 +7,13 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': fileURLToPath(new URL('web/src', import.meta.url)) } },
   lint: {
-    plugins: ['typescript', 'unicorn', 'import', 'promise', 'vitest'],
+    plugins: ['typescript', 'unicorn', 'import', 'promise', 'vitest', 'react'],
     jsPlugins: ['./lint/ultimate.ts'],
     categories: { correctness: 'error', suspicious: 'error' },
     rules: {
       'import/no-cycle': 'error',
+      'react/no-array-index-key': 'warn',
+      'react/no-children-prop': 'off',
       'typescript/no-unsafe-type-assertion': 'off',
       'promise/always-return': 'off',
       'typescript/no-floating-promises': ['error', { ignoreVoid: false }],

@@ -314,6 +314,7 @@ function TaskRow({
                   Notes
                 </div>
                 {task.notes.map((note, index) => (
+                  // oxlint-disable-next-line react/no-array-index-key -- Notes are append-only; timestamps can repeat.
                   <Note key={index} note={note} />
                 ))}
               </div>

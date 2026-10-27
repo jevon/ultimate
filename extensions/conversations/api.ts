@@ -86,6 +86,12 @@ export type ReleaseService = {
 }
 /** The extension point concluding frees resources through; workspaces provides it (worktrees). */
 export const Release = defineApi<ReleaseService>()('conversations.release')
+export type PreviewsService = {
+  /** Stop the previews conversations `ids` started (each listed, descendants included); returns their instance ids. */
+  stop(ids: number[], caller: Context): Promise<string[]>
+}
+/** The extension point the Conclude action stops previews through; instance provides it. */
+export const Previews = defineApi<PreviewsService>()('conversations.previews')
 /**
  * How full a conversation's context is, on that conversation: the one measure the status line and automations' context
  * triggers read. The conversations extension keeps it; a fork starts empty until its first answer.

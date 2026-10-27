@@ -24,7 +24,8 @@ still holds everything: what you worked on, what is still open (branches, questi
 the decisions and why, the user's corrections, the lessons, and what you would do next. Plain Markdown, at most
 12,000 characters; record it with one call, `ultimate.action('dream', 'handoff', {text})`, then end your turn with one
 line to the user. A second call replaces the first while the dream still waits. The dream starts by itself once the
-handoff is recorded and no other conversation works; after 30 minutes without one it starts without it and says so.
+handoff is recorded and no other conversation is running a model response or tool call; after 30 minutes without one
+it starts without it and says so.
 The dream reads the handoff first, and a new chapter wakes up from it.
 
 A `dream.started` input means the session began after your handoff. Start one

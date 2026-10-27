@@ -17,7 +17,8 @@ screenshots: send them with the request.
 3. **Seed it like a user**: open @ultimate (the first row of the sidebar) and send real prompts until the state the user should
    judge exists: a long transcript, a running tool, a skill run, an error. Never fake state by writing entries.
    Drive it with `browser` steps `{send: '…'}` then `{until: 'idle'}` (or `'quiet'` when it starts branches), not
-   fill, Enter and a fixed `wait`.
+   fill, Enter and a fixed `wait`; set the model, thinking or Play/Pause with one `eval` on `window.ultimate.api`
+   (`verify-ui`), not by clicking menus.
 4. **Look first yourself**: follow the `verify-ui` skill. Fix what is off before you ask anyone.
 5. **Ask for approval**: while @ultimate's message to you is open (your task or a later question), your answer is
    the request; otherwise `message` @ultimate with reply: true. To send screenshots, `message` it with
