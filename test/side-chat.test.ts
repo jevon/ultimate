@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { awaitWithContext } from '@earendil-works/chord/context'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai/providers/faux'
 import type { FauxResponseFactory } from '@earendil-works/pi-ai/providers/faux'
 import type { ConversationId } from '@earendil-works/pi-durable'
@@ -37,8 +37,9 @@ beforeAll(async () => {
     JSON.stringify({ summaryModel: 'unavailable/test' }),
   )
 })
-afterAll(async () => {
-  await Promise.all(servers.map((server) => server.close()))
+// Each test's servers close when it ends: closing every test's servers at once overruns the hook timeout under load.
+afterEach(async () => {
+  await Promise.all(servers.splice(0).map((server) => server.close()))
 })
 const textOf = (content: unknown): string =>
   typeof content === 'string' ? content : JSON.stringify(content)
