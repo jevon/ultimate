@@ -229,7 +229,9 @@ function useSecrets(system: SystemInfo | undefined) {
 
 /** One line to the full Secrets panel, with how many declared secrets are still missing. */
 function SecretsLine({ secrets }: { secrets: readonly Secret[] | undefined }) {
-  const missing = secrets?.filter((secret) => !secret.set && secret.declaredBy.length > 0).length
+  const missing = secrets?.filter(
+    (secret) => !secret.set && !secret.via && secret.declaredBy.length > 0,
+  ).length
   return (
     <button
       className="group flex w-full items-center gap-2 border-b border-border/60 px-3 py-2 text-left outline-none hover:bg-muted/40 focus-visible:bg-muted/40"
@@ -271,13 +273,16 @@ function RowSecrets({ secrets }: { secrets: readonly Secret[] }) {
           <span
             className={cn(
               'flex shrink-0 items-center gap-1',
-              secret.set ? 'text-muted-foreground/70' : 'text-warning',
+              secret.set || secret.via ? 'text-muted-foreground/70' : 'text-warning',
             )}
           >
             <span
-              className={cn('size-1.5 rounded-full', secret.set ? 'bg-success' : 'bg-warning')}
+              className={cn(
+                'size-1.5 rounded-full',
+                secret.set || secret.via ? 'bg-success' : 'bg-warning',
+              )}
             />
-            {secret.set ? 'set' : 'missing'}
+            {secret.set ? 'set' : secret.via ? `via ${secret.via}` : 'missing'}
           </span>
           <button
             className="ml-auto shrink-0 text-[11px] text-brand outline-none hover:underline focus-visible:underline"
@@ -487,7 +492,7 @@ function Row({
               {sources[extension.source]}
               <span className="text-muted-foreground/60"> · {label}</span>
             </span>
-            {secrets.some((secret) => !secret.set) && (
+            {secrets.some((secret) => !secret.set && !secret.via) && (
               <span className="flex shrink-0 items-center gap-1 self-center text-[10.5px] text-warning">
                 <TriangleAlertIcon className="size-3" />
                 secret missing

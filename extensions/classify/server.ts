@@ -20,8 +20,8 @@ function record(value: unknown): value is Record<string, unknown> {
 export default function classify(host: ExtensionHost) {
   const service: ClassifyService = {
     async ask(request, signal) {
-      // Pi's `typesafe` provider (models.json, auth.json or its env key) wins over the secret, so a configured
-      // endpoint gets its own key.
+      // Pi's `typesafe` provider auth (models.json, auth.json or its env key) wins over the stored secret. An
+      // unresolvable models.json key throws rather than sending the stored secret to a configured endpoint.
       const key =
         (await host.modelRuntime.getAuth('typesafe'))?.auth.apiKey ??
         (await readSecret(host.userHome, 'TYPESAFE_API_KEY'))

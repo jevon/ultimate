@@ -4,6 +4,7 @@ import {
   anchorSelector,
   compactRows,
   groupAside,
+  groupBetween,
   groupQuiet,
   isOpenIn,
   openIn,
@@ -297,6 +298,16 @@ describe('quiet groups', () => {
       '[data-run-last] [data-entry-id="3"]:not([data-run-last])',
     )
     expect(anchorSelector({ entryId: 3, inner: false })).toBe('[data-entry-id="3"]')
+  })
+
+  it('folds everything between two thread rows into one stretch', () => {
+    const ids = groupBetween(
+      [1, 2, 3, 4, 5, 6].map((id) => ({ id })),
+      ({ id }) => id === 2 || id === 5,
+    )
+    expect(ids.map((row) => ('between' in row ? row.between.map(({ id }) => id) : row.id))).toEqual(
+      [[1], 2, [3, 4], 5, [6]],
+    )
   })
 
   it('opens the run that holds an entry inside a group', () => {

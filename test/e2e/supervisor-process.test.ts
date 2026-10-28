@@ -16,9 +16,52 @@ it('starts past stale lock sidecars without killing an unrelated live pid', asyn
   await writeFile(join(home, 'storage.lock'), JSON.stringify({ pid: unrelated.pid }))
   const running = await launch(home)
   await until(() => running.output().includes('Ultimate: http://'))
+  // Without Tailscale there is no remote origin and nothing about one.
+  expect(running.output()).not.toContain('(remote)')
   expect(unrelated.exitCode).toBeNull()
   expect(unrelated.signalCode).toBeNull()
   expect(() => process.kill(unrelated.pid!, 0)).not.toThrow()
+}, 60000)
+
+it('logs each remote URL when it is registered and when it is no longer served', async () => {
+  const home = await temp('ultimate-access-log-')
+  homes.push(home)
+  const root = await sourceCopy(home)
+  copies.set(home, root)
+  await writeFile(
+    join(home, '.ultimate/settings.json'),
+    JSON.stringify({ extensions: { enable: ['tailscale'] } }),
+  )
+  // Real access registration, without touching the machine's Tailscale Serve mappings.
+  await writeFile(
+    join(root, 'extensions/tailscale/server.ts'),
+    `import { defineExtension } from '@earendil-works/pi-durable'
+let remove: (() => void) | undefined
+export default function fixture(host: import('../../server/extensions.ts').ExtensionHost) {
+  host.onOpen(async () => {
+    remove = host.access.allow({ origin: 'https://rog.example.ts.net:5799', verify: () => ({ login: 'owner' }) })
+  })
+  return defineExtension({ name: 'tailscale' })
+}
+export const actions = { revoke: async () => { remove?.(); return true } }
+`,
+  )
+  const running = await launch(home)
+  // Registration happens while the extensions open, so the remote line may come before the local one.
+  await until(
+    () =>
+      running.output().includes('Ultimate: https://rog.example.ts.net:5799 (remote)') &&
+      running.output().includes('Ultimate: http://'),
+  )
+  const url = /Ultimate: (http:\/\/[^\s]+)/.exec(running.output())![1]
+  expect((await post(url, '/api/extensions/tailscale/actions/revoke', { args: null })).status).toBe(
+    200,
+  )
+  await until(() =>
+    running
+      .output()
+      .includes('Ultimate: https://rog.example.ts.net:5799 (remote) is no longer served'),
+  )
 }, 60000)
 
 it('ignores retiring core status on swap and drops rows on crash recovery', async () => {

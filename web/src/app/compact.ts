@@ -268,6 +268,33 @@ export function groupAside(
   return grouped
 }
 
+/** The rows between two rows of the thread the reader follows, which recede together. */
+export interface BetweenGroup<Row> {
+  between: readonly Row[]
+}
+
+/**
+ * `rows` with each stretch between two `thread` rows (and before the first, and after the last) folded into one group:
+ * the conversation reads as its thread, the rest receding between. Only a whole row can be thread; runs of work and
+ * groups never are.
+ */
+export function groupBetween<Row extends object>(
+  rows: readonly Row[],
+  thread: (row: Row) => boolean,
+): (Row | BetweenGroup<Row>)[] {
+  const grouped: (Row | BetweenGroup<Row>)[] = []
+  let stretch: Row[] = []
+  for (const row of rows) {
+    if (thread(row)) {
+      if (stretch.length) grouped.push({ between: stretch })
+      stretch = []
+      grouped.push(row)
+    } else stretch.push(row)
+  }
+  if (stretch.length) grouped.push({ between: stretch })
+  return grouped
+}
+
 /** The folded run where `entry` first shows, if it starts in one: revealing the entry opens it. */
 export function runOf(rows: readonly (CompactPart | WorkRun | QuietGroup)[], entry: number) {
   const flat = rows.flatMap((row) => ('quiet' in row ? row.quiet : [row]))
