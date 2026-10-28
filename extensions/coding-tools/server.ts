@@ -24,10 +24,14 @@ import {
   createReadTool,
   createWriteTool,
 } from '@earendil-works/pi-durable/tools'
+import { createNodePhotonImages } from '@earendil-works/pi-durable/images/node'
 import { git } from '../../lib/git.ts'
 import type { ExtensionHost } from '../../server/extensions.ts'
 import { implementAction } from '../../lib/actions.ts'
 import { CancelAction, CancelledDoc, Committed } from './refs.ts'
+
+/** Lets Pi's read tool shrink an image past the model's limits (2000x2000 by default) instead of refusing it. */
+const images = await createNodePhotonImages()
 
 /** Pi's edit tool, with how to recover from its two common failures. */
 function editTool() {
@@ -326,7 +330,12 @@ export default function codingTools(host: Pick<ExtensionHost, 'emit'>) {
   return defineExtension({
     name: 'coding-tools',
     // Each tool keeps its own parameters; the list is only read through the base registration.
-    tools: [createReadTool(), createWriteTool(), editTool(), bashTool] as ToolRegistration[],
+    tools: [
+      createReadTool({ images }),
+      createWriteTool(),
+      editTool(),
+      bashTool,
+    ] as ToolRegistration[],
     wraps: [
       wrapTool(createBashTool(), (bash) => ({
         ...bash,
