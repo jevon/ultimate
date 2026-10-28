@@ -70,8 +70,8 @@ async function checkHost(options: { logins: string[]; secrets?: string[] }) {
   const projectRoot = join(userHome, 'project')
   await mkdir(join(userHome, '.ultimate/agents'), { recursive: true })
   await writeFile(
-    join(userHome, '.ultimate/agents/lander.md'),
-    '---\nname: lander\ndescription: Lands\nmodel: openai-codex/gpt-6.1-sol\n---\nLand.\n',
+    join(userHome, '.ultimate/agents/scout.md'),
+    '---\nname: scout\ndescription: Scouts\nmodel: openai-codex/gpt-6.1-sol\n---\nScout.\n',
   )
   const codex = model('openai-codex', 'gpt-6.1-sol')
   return {
@@ -121,8 +121,8 @@ it('warns about a fallback, agent models without a login and a missing secret, w
   expect(warnings[0].impact).toContain('Using openrouter/haiku instead')
   // The pinned definition still loads; it fails at its first call.
   expect(warnings[1]).toMatchObject({
-    summary: 'lander → openai-codex: no login here',
-    impact: 'They fail at their first model call, so landings fail.',
+    summary: 'scout → openai-codex: no login here',
+    impact: 'They fail at their first model call.',
   })
   expect(warnings[2]).toMatchObject({
     summary: 'PARALLEL_API_KEY missing',
@@ -147,7 +147,7 @@ it('names each file that replaces a built-in definition whole, but not an overla
   const host = await checkHost({ logins: ['openrouter', 'openai-codex'] })
   const builtin = '---\nname: NAME\ndescription: Built in\ntools: [read]\n---\nBuilt-in body.\n'
   await mkdir(join(host.ultimateRoot, 'agents'), { recursive: true })
-  for (const name of ['lander', 'ultimate'])
+  for (const name of ['scout', 'ultimate'])
     await writeFile(join(host.ultimateRoot, `agents/${name}.md`), builtin.replace('NAME', name))
   await writeFile(
     join(host.userHome, '.ultimate/agents/ultimate.md'),
@@ -166,7 +166,7 @@ it('names each file that replaces a built-in definition whole, but not an overla
   expect(issues).toEqual([
     expect.objectContaining({
       status: 'warn',
-      summary: '~/.ultimate/agents/lander.md replaces the built-in lander',
+      summary: '~/.ultimate/agents/scout.md replaces the built-in scout',
     }),
   ])
 })

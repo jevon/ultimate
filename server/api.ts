@@ -26,6 +26,7 @@ import { admit, deviceOf } from './request-security.ts'
 import type { Access } from './request-security.ts'
 import { conversationIndex } from './project.ts'
 import { windowOps, windowView } from './view-window.ts'
+import { shortTitle } from '../lib/title.ts'
 
 class HttpError extends Error {
   status: number
@@ -187,7 +188,9 @@ export async function createApi(
       const metadata = await harness.snapshot(Metadata, record.id, context)
       // Every list the user sees (sidebar, search, @ultimate, the cloud front page) comes from these summaries.
       if (metadata?.label === EVENT_LOG_LABEL) continue
-      const title = metadata?.title ?? metadata?.inputTitle
+      // Older subagents were titled with their whole prompt; every switch resends this list, so long titles are cut.
+      const full = metadata?.title ?? metadata?.inputTitle
+      const title = full && full.length > 200 ? shortTitle(full, 200) : full
       refreshed.push({
         id: record.id,
         ...(record.owner ? { parentConversationId: record.owner.conversationId } : {}),

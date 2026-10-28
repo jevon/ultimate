@@ -604,9 +604,15 @@ describe('side chats', () => {
     const automations = await f.server.harness.snapshot(Automations, context)
     expect(automations!.automations.A1.subscribers).toEqual([f.main])
     await f.call(side, 'automation', { action: 'create', name: 'Test', ask: 'test creation only' })
+    // The dummy watcher only answers, so it now escalates rather than leaving a script stuck in writing.
+    await until(
+      async () =>
+        (await f.server.harness.snapshot(Automations, context))!.automations.A2.script!.state ===
+        'failed',
+    )
     const created = (await f.server.harness.snapshot(Automations, context))!.automations.A2
     expect(created.subscribers).toEqual([f.main])
-    expect(created.script!.state).toBe('writing')
+    expect(created.script!.error).toContain('The watcher stopped while the script was writing')
     expect(created.script!.pid).toBeUndefined()
     expect(
       (await entries(f.server, f.main)).filter(

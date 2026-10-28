@@ -596,7 +596,7 @@ export default {
               !(
                 typeof name === 'string' &&
                 ((name.startsWith(`${own}.`) && name.length > own.length + 1) ||
-                  (own === 'messages' && ['board.sent', 'board.triaged'].includes(name)))
+                  (own === 'messages' && name === 'board.sent'))
               )
             )
               context.report({

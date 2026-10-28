@@ -31,7 +31,8 @@ export const waitingOnUser = (log: MessagesData) =>
  * - `waits`: the primary agent (@ultimate) has a question open with the user, the only
  *   state that asks the user to act;
  * - `awaiting`: a conversation that is no subagent asked the primary agent (a branch asking @ultimate) and waits for
- *   the answer; a subagent's questions go to its parent, which answers them in its own run;
+ *   the answer, or reported to it and has not heard from it since; a subagent's questions go to its parent, which
+ *   answers them in its own run;
  * - `done`: a subagent answered, and its answer went to its parent;
  * - `failed`: its latest input ended without an answer;
  * - `idle`: everything else.
@@ -56,6 +57,8 @@ export function conversationState(
     parked?: boolean
     /** The primary agent's conversation, which a branch's open question waits on. */
     primary?: number
+    /** Since when it counts as concluded (`useConcludedSince`): its reports from before then await nothing. */
+    concludedSince?: number
   },
   log: MessagesData,
 ): ConversationState {
@@ -65,14 +68,34 @@ export function conversationState(
   if (kind === 'primary' && waitingOnUser(log) > 0) return 'waits'
   if (
     kind !== 'subagent' &&
-    log.messages.some(
-      (message) => message.from === id && message.to === conversation.primary && isOpen(message),
-    )
+    awaitsPrimary(id, conversation.primary, log, () => conversation.concludedSince)
   )
     return 'awaiting'
   if (runState === 'error') return 'failed'
   if (kind === 'subagent' && runState === 'answered') return 'done'
   return 'idle'
+}
+
+/**
+ * Whether conversation `id` waits on the primary agent: a reply-enabled message to it is open, or its latest report
+ * (a routed final answer after it stopped with nothing under way) came after the primary agent's latest message to it
+ * and after it was last concluded.
+ */
+function awaitsPrimary(
+  id: number,
+  primary: number | undefined,
+  log: MessagesData,
+  concludedSince: (id: number) => number | undefined,
+) {
+  if (primary === undefined) return false
+  let reported = false
+  for (const message of log.messages) {
+    if (message.from === id && message.to === primary) {
+      if (isOpen(message)) return true
+      if (message.report && !settled(message, concludedSince)) reported = true
+    } else if (message.from === primary && message.to === id) reported = false
+  }
+  return reported
 }
 
 /** A state in the sidebar's and System's lower-case words; `waiting` counts what waits on you. */
@@ -224,6 +247,34 @@ export function counterparts(
 /** The user's answer to a question they were asked, once it has one. */
 export const answerTo = (messages: readonly Message[], question: Message) =>
   messages.find((m) => m.from === 'user' && m.re === question.id)
+
+/**
+ * A conversation's open messages: answers it waits for, what it owes (an open question, or a branch's report it has
+ * neither messaged nor concluded the branch about since), and messages still on their way. `concludedSince` says since
+ * when a conversation counts as concluded (`useConcludedSince`).
+ */
+export function openMessages(
+  messages: readonly Message[],
+  id: number,
+  concludedSince: (id: number) => number | undefined,
+) {
+  const reports = new Map<number | 'user' | 'remote', Message>()
+  for (const m of messages)
+    if (m.to === id && m.report && !settled(m, concludedSince)) reports.set(m.from, m)
+    else if (m.from === id) reports.delete(m.to)
+  return {
+    waiting: messages.filter((m) => m.from === id && isOpen(m) && m.state === 'delivered'),
+    owed: [
+      ...messages.filter((m) => m.to === id && isOpen(m) && m.state === 'delivered'),
+      ...reports.values(),
+    ].toSorted((a, b) => a.id - b.id),
+    delivering: messages.filter((m) => m.from === id && m.state === 'sent'),
+  }
+}
+
+/** Whether a report is settled: its sender was concluded after sending it (or is concluded now). */
+export const settled = (message: Message, concludedSince: (id: number) => number | undefined) =>
+  typeof message.from === 'number' && message.at <= (concludedSince(message.from) ?? -Infinity)
 
 /** A reply-enabled message still waiting for its answer. */
 export const isOpen = (message: Message) =>

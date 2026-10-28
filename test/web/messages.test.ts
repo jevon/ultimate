@@ -11,6 +11,7 @@ import {
   counterparts,
   stateWord,
   messageStatus,
+  openMessages,
   outgoingState,
   scriptMessaged,
   sentBy,
@@ -382,6 +383,33 @@ describe('conversation state', () => {
     expect(
       conversationState({ ...branch, kind: 'subagent' }, messagesLog({ from: 5, to: 3 })),
     ).toBe('done')
+  })
+
+  it('awaits the primary agent after reporting to it, until the primary agent messages it', () => {
+    const branch = { id: 5, kind: 'other' as const, runState: 'answered' as const, primary: 3 }
+    const report = { from: 5, to: 3, reply: false, report: true as const }
+    expect(conversationState(branch, messagesLog(report))).toBe('awaiting')
+    // A note (no report) waits on nothing.
+    expect(conversationState(branch, messagesLog({ from: 5, to: 3, reply: false }))).toBe('idle')
+    expect(conversationState(branch, messagesLog(report, { from: 3, to: 5, reply: false }))).toBe(
+      'idle',
+    )
+  })
+
+  it('owes no report from a conversation concluded after it, until a newer report', () => {
+    // The bug: two landed branches, concluded by @ultimate, still showed as owed on its composer chip.
+    const report = { from: 5, to: 3, reply: false, report: true as const, at: 100 }
+    const owed = (since: number | undefined, ...more: Partial<Message>[]) =>
+      openMessages(messagesLog(report, ...more).messages, 3, (id) =>
+        id === 5 ? since : undefined,
+      ).owed.map((m) => m.id)
+    expect(owed(undefined)).toEqual([1])
+    expect(owed(Infinity)).toEqual([])
+    // Concluded at 200, then resumed: its earlier report stays settled, a newer one is owed.
+    expect(owed(200)).toEqual([])
+    expect(owed(200, { ...report, at: 300 })).toEqual([2])
+    const branch = { id: 5, kind: 'other' as const, runState: 'answered' as const, primary: 3 }
+    expect(conversationState({ ...branch, concludedSince: 200 }, messagesLog(report))).toBe('idle')
   })
 
   it('says every state in a word, so a standing row or lane never falls back to idle', () => {

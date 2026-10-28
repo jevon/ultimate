@@ -26,12 +26,9 @@ import type { OpenHost } from '../server/harness.ts'
 import type { ExtensionHost } from '../server/extensions.ts'
 import type { ActionContext } from '../server/actions.ts'
 import { Metadata } from '../server/metadata.ts'
-import { emit, EventFeed } from '../server/events.ts'
+import { emit } from '../server/events.ts'
 import messagesExtension, { actions } from '../extensions/messages/server.ts'
-import pauseExtension, {
-  actions as pauseActions,
-  docs as pauseDocs,
-} from '../extensions/pause/server.ts'
+import pauseExtension, { actions as pauseActions } from '../extensions/pause/server.ts'
 import { Messages, MessageSent } from '../extensions/messages/api.ts'
 import { UserInputEvent } from '../shared/events.ts'
 import type { MessagesService } from '../extensions/messages/api.ts'
@@ -40,12 +37,32 @@ import type { BranchInput } from '../extensions/lineage/server.ts'
 import { Branch, Roots } from '../extensions/lineage/api.ts'
 import { Standing, Subagents } from '../extensions/subagents/api.ts'
 import { Workspaces } from '../extensions/workspaces/workspaces.ts'
+import { concludedIn } from '../extensions/conversations/server.ts'
+import { UiState } from '../server/ui-state.ts'
 
 const homes: string[] = []
 const hosts: OpenHost[] = []
 afterEach(async () => {
   for (const host of hosts.splice(0)) await host.close()
   for (const home of homes.splice(0)) await removeTemp(home)
+})
+/** Stands in for a subagent's report on its way to the branch: live until the test releases it. */
+const pendingReport = Promise.withResolvers<void>()
+const reporter = defineTask<{ delivered: boolean }, { phase: 'deliver' }, null>({
+  name: 'ultimate.subagent-reporter',
+  version: 1,
+  initial: () => ({ phase: 'deliver' }),
+  phases: {
+    deliver: async (task, runtime, caller) => {
+      if (!task.input.delivered) await awaitWithContext(pendingReport.promise, caller)
+      await runtime.commit(
+        () => ({ status: 'terminal', outcome: { status: 'completed', result: null } }),
+        caller,
+      )
+    },
+  },
+  abort: (_task, runtime, caller) =>
+    runtime.commit(() => ({ status: 'terminal', outcome: { status: 'aborted' } }), caller),
 })
 const anchor = defineTask<null, { phase: 'done' }, null>({
   name: 'messages-test.anchor',
@@ -80,10 +97,6 @@ async function fixture(
     /** Only this conversation's calls wait at the gate. */
     conversation?: () => number
   },
-  /** Triage's verdict for messages to @ultimate; without one there is no summary model, so nothing is gated. */
-  triage?: (text: string) => string | Promise<string>,
-  /** Holds triage's model selection until it settles. */
-  selecting?: Promise<void>,
 ) {
   /** Services other extensions implement here, by API name, such as pause's `messages.gate`. */
   const provided = new Map<string, unknown>()
@@ -118,22 +131,10 @@ async function fixture(
               return recipient.id
             },
           }
-        : name === 'conversations'
-          ? {
-              summaryModel: async () => {
-                await selecting
-                return triage ? { provider: 'test', id: 'triage', thinking: 'off' } : undefined
-              },
-              askSummaryModel: async (_models: unknown, _system: string, input: string) => ({
-                provider: 'test',
-                model: 'triage',
-                text: await triage!(JSON.parse(input).untrustedMessage as string),
-                stopReason: 'stop',
-              }),
-              accountResponse: async () => undefined,
-            }
-          : name === 'workspaces'
-            ? { doc: Workspaces, git: async () => '' }
+        : name === 'workspaces'
+          ? { doc: Workspaces, git: async () => '' }
+          : name === 'conversations'
+            ? { concludedIn }
             : name === 'lineage'
               ? {
                   rootOf: (id: number, ctx: Context) => rootOf(host, id, ctx),
@@ -145,7 +146,7 @@ async function fixture(
     metadata: Metadata,
     emit,
     harness: () => opened.harness,
-    // Messages also implements workspaces' handoff point; the tests call its own service.
+    // Messages also implements workspaces' branches point; the tests call its own service.
     implement: (api: { name: string }, value: MessagesService) => {
       if (api.name === 'messages') service = value
     },
@@ -217,7 +218,7 @@ async function fixture(
   prepared.registry.install(
     defineExtension({
       name: 'test-hold',
-      tasks: [anchor],
+      tasks: [anchor, reporter],
       tools: [
         defineTool({
           name: 'hold',
@@ -640,34 +641,6 @@ it('refuses messages to the user from anyone but @ultimate', async () => {
     to: 'user',
     text: 'Relayed update',
   })
-})
-it('names the lander in both message and reply model text', async () => {
-  const f = await fixture()
-  await f.opened.harness.commit(async (tx) => {
-    ;(await tx.doc(Workspaces, ROOT_CONVERSATION_ID)).landerConversations.test = f.recipient.id
-  }, context)
-  await f.send(`#${f.recipient.id}`)
-  await until(() =>
-    f.observed.some((text) => text.startsWith(`Reply from #${f.recipient.id} (@lander)`)),
-  )
-  await (
-    await f.recipient.submit(
-      {
-        type: 'input',
-        content: 'SEND ' + JSON.stringify({ to: '#1', text: 'Lander update', reply: false }),
-      },
-      context,
-    )
-  ).wait(context)
-  await until(() =>
-    f.observed.some((text) => text.startsWith(`Message from #${f.recipient.id} (@lander)`)),
-  )
-  expect(f.observed).toEqual(
-    expect.arrayContaining([
-      expect.stringContaining(`Reply from #${f.recipient.id} (@lander) to your message`),
-      expect.stringContaining(`Message from #${f.recipient.id} (@lander):`),
-    ]),
-  )
 })
 it('resolves a standing address and returns unanswered inputs as failure replies', async () => {
   const f = await fixture()
@@ -1376,36 +1349,131 @@ it('forwards images into a new branch with its prompt', async () => {
   const entry = await placed(f, message.to as number, message.id)
   expect(imagesIn(entry)).toEqual([png(0)])
 })
-it("routes a branch's later final answer to its starter once: a note, or a wake for a decision", async () => {
+it("routes a branch's later final answer to its starter once, waking it when the branch stopped idle", async () => {
   const f = await fixture()
   const b = await branched(f)
   await b.later('Landed abc123')
   await until(async () => (await b.from()).length === 2)
-  await b.later('Approve the preview?\n1. Land it\n2. Iterate')
-  await until(async () => (await b.from()).length === 3)
-  // The note started no run, so only the decision woke @ultimate after the branch's first reply.
-  await until(async () => (await replies(f)).length === 1)
+  await until(async () => (await f.log())!.messages.at(-1)?.answer !== undefined)
   await f.opened.root.waitForIdle(context)
-  const routed = (await b.from()).slice(1)
-  expect(routed).toMatchObject([
-    { to: 1, text: 'Answer: Landed abc123', reply: false },
-    { to: 1, text: 'Answer: Approve the preview?\n1. Land it\n2. Iterate', reply: false },
-  ])
+  const [, routed] = await b.from()
+  expect(routed).toMatchObject({ to: 1, text: 'Answer: Landed abc123', reply: false, report: true })
   const view = await f.opened.root.viewState(context)
-  const inputs = view.value.entries.filter((e) => e.kind === 'board.message')
-  expect(inputs.map((e) => [e.data, e.input === true])).toEqual([
-    [expect.objectContaining({ id: routed[0].id, delivery: 'note' }), false],
-    [expect.objectContaining({ id: routed[1].id, delivery: 'followUp' }), true],
+  const input = view.value.entries.find(
+    (e) => e.kind === 'board.message' && (e.data as { id?: number })?.id === routed.id,
+  )
+  expect([input?.data, input?.input]).toEqual([
+    expect.objectContaining({ delivery: 'followUp' }),
+    true,
   ])
   view.dispose()
   expect(f.observed).toContain(
-    `Message from #${b.id}:\nAnswer: Approve the preview?\n1. Land it\n2. Iterate\nOne-way message: #${b.id} expects no answer, and your answer here is not sent to it. If it needs to hear from you, message it.`,
+    `Message from #${b.id}:\nAnswer: Landed abc123\nOne-way message: #${b.id} expects no answer, and your answer here is not sent to it. If it needs to hear from you, message it.`,
   )
-  // A reopen replays nothing: each answer was routed exactly once.
+  // A reopen replays nothing: the answer was routed exactly once.
   await f.opened.close()
   await f.open()
   await b.settled()
-  expect(await b.from()).toHaveLength(3)
+  expect(await b.from()).toHaveLength(2)
+})
+it("leaves a branch's final answer as a note while its work is under way", async () => {
+  const f = await fixture()
+  const b = await branched(f)
+  // The branch has a submission in the lander's queue: its answer is an update, not a report.
+  await f.opened.harness.commit(async (tx) => {
+    ;(await tx.doc(Workspaces, ROOT_CONVERSATION_ID)).queue.push({
+      conversationId: b.id,
+    } as never)
+  }, context)
+  await b.later('Submitted; waiting on the lander')
+  await until(async () => (await b.from()).length === 2)
+  const [, routed] = await b.from()
+  expect(routed).toMatchObject({ reply: false })
+  expect(routed.report).toBeUndefined()
+  const view = await f.opened.root.viewState(context)
+  const note = view.value.entries.find(
+    (e) => e.kind === 'board.message' && (e.data as { id?: number })?.id === routed.id,
+  )
+  expect([note?.data, note?.input]).toEqual([
+    expect.objectContaining({ delivery: 'note' }),
+    undefined,
+  ])
+  expect(
+    view.value.entries.filter((e) => e.id > note!.id && e.kind === 'pi.assistant'),
+  ).toHaveLength(0)
+  view.dispose()
+})
+it('leaves the final answer of a branch its landing concluded as a note, since the landing woke the starter', async () => {
+  const f = await fixture()
+  const b = await branched(f)
+  await f.opened.harness.commit(async (tx) => {
+    ;(await tx.doc(UiState, ROOT_CONVERSATION_ID))['ext.conversations.concluded'] = [b.id]
+  }, context)
+  // Its answer is routed after the lander concluded it: the starter already woke with the landing card.
+  await b.later('Done')
+  await until(async () => (await b.from()).length === 2)
+  const [, routed] = await b.from()
+  expect(routed).toMatchObject({ reply: false })
+  expect(routed.report).toBeUndefined()
+})
+it("leaves a branch's answer as a note while a subagent's report is still on its way", async () => {
+  const f = await fixture()
+  const b = await branched(f)
+  // The child answered, but its report is not yet an input of the branch (#431701's gap), and it is older than
+  // 120 reports that finished since (#433005).
+  await f.opened.harness.commit(
+    (tx) =>
+      tx.createTask(
+        reporter,
+        { delivered: false },
+        {
+          conversationId: b.id as ConversationId,
+          ownership: { kind: 'conversation' },
+          background: true,
+        },
+      ),
+    context,
+  )
+  await f.opened.harness.commit(async (tx) => {
+    for (let i = 0; i < 120; i++)
+      await tx.createTask(
+        reporter,
+        { delivered: true },
+        {
+          conversationId: b.id as ConversationId,
+          ownership: { kind: 'conversation' },
+          background: true,
+        },
+      )
+  }, context)
+  // Only the undelivered report stays live.
+  await until(
+    async () =>
+      (await f.opened.harness.inspect(context)).tasks.filter(
+        ({ record }) => record.kind === reporter.definition.name,
+      ).length === 1,
+  )
+  await (
+    await b.branch.submit({ type: 'input', content: 'Waiting on the scout' }, context)
+  ).wait(context)
+  await until(async () => (await b.from()).length === 2)
+  expect((await b.from())[1].report).toBeUndefined()
+  pendingReport.resolve()
+})
+it("places a branch's one-way message to its starter as a note", async () => {
+  const f = await fixture()
+  const b = await branched(f)
+  await b.later(
+    'SEND ' + JSON.stringify({ to: '#1', text: 'Progress: scouts running', reply: false }),
+  )
+  const sent = (await b.from()).find((m) => m.text === 'Progress: scouts running')!
+  const view = await f.opened.root.viewState(context)
+  const note = view.value.entries.find(
+    (e) => e.kind === 'board.message' && (e.data as { id?: number })?.id === sent.id,
+  )
+  expect(note?.data).toMatchObject({ delivery: 'note' })
+  expect(note?.input).toBeUndefined()
+  view.dispose()
 })
 it("does not route an answer to the starter's reply-enabled message", async () => {
   const f = await fixture()
@@ -1440,37 +1508,19 @@ it("routes an answer to the starter's one-way message, waking it for a decision 
   expect((await f.log())!.messages.filter((m) => m.to === b.id)).toHaveLength(2)
   expect(await b.from()).toHaveLength(2)
 })
-it("does not route a branch's reaction to its starter's own reply", async () => {
+it("routes a branch's answer to its starter's reply, so the starter hears how it went on", async () => {
   const f = await fixture()
   const b = await branched(f)
   await b.later('SEND ' + JSON.stringify({ to: '#1', text: 'Approve?' }))
-  // @ultimate answers, the reply wakes the branch, and the branch's answer to it stays in the branch.
-  await until(async () =>
-    (await f.log())!.messages.some((m) => m.to === b.id && m.re !== undefined && m.re > 1),
-  )
-  await b.branch.waitForIdle(context)
+  // The asking run's own final answer is a note: it still waits on the reply. @ultimate answers, the reply wakes the
+  // branch, and the branch's answer to it, with nothing left under way, is its report.
+  await until(async () => (await b.from()).length === 4)
   await b.settled()
-  const view = await b.branch.viewState(context)
-  expect(view.value.entries.findLast((e) => e.kind === 'board.reply')).toBeDefined()
-  expect(view.value.entries.at(-1)?.kind).toBe('pi.assistant')
-  view.dispose()
-  expect((await b.from()).map((m) => m.text)).toEqual([
-    expect.stringContaining('Explore'),
-    'Approve?',
-  ])
-})
-it('does not route the final answer of a run that messaged its starter', async () => {
-  const f = await fixture()
-  const b = await branched(f)
-  await b.later('SEND ' + JSON.stringify({ to: '#1', text: 'Landed', reply: false }))
-  await b.settled()
-  // The run ended with a final answer after messaging, and that answer stayed in the branch.
-  const view = await b.branch.viewState(context)
-  expect(view.value.entries.at(-1)?.kind).toBe('pi.assistant')
-  view.dispose()
-  expect((await b.from()).map((m) => [m.text, m.call !== undefined])).toEqual([
-    [expect.stringContaining('Explore'), false],
-    ['Landed', true],
+  expect((await b.from()).map((m) => [m.text, m.report])).toEqual([
+    [expect.stringContaining('Explore'), undefined],
+    ['Approve?', undefined],
+    ['Done', undefined],
+    [expect.stringContaining('Reply from'), true],
   ])
 })
 it('recovers once after input placement, before the recipient settles', async () => {
@@ -1508,8 +1558,7 @@ function pauser(f: Awaited<ReturnType<typeof fixture>>) {
     onOpen: () => {},
     onClose: () => {},
     onRelease: () => {},
-    // Pause fills Messages’ `messages.gate` point; the fixture's `want` hands it to Messages.
-    implement: (api: { name: string }, value: unknown) => void f.provided.set(api.name, value),
+    implement: () => {},
     conversations: () => [],
   } as unknown as ExtensionHost
   pauseExtension(host)
@@ -1540,239 +1589,6 @@ it('reaches Paused · safe while a delivery waits for its held recipient to answ
     ),
   )
 })
-/** Pause's own document on conversation 1, which the footer watches. */
-const PauseState = pauseDocs[0]
-/** #recipient messages @ultimate one-way, which Messages triages with the summary model. */
-async function messageUltimate(f: Awaited<ReturnType<typeof fixture>>, text: string) {
-  const recipient = await f.opened.harness.conversation(f.recipient.id, context)
-  await (
-    await recipient!.submit(
-      {
-        type: 'input',
-        content: `SEND ${JSON.stringify({ to: '#1', text, reply: false })}`,
-      },
-      context,
-    )
-  ).wait(context)
-}
-it('starts no triage model call while paused: one gated before it runs waits for Play', async () => {
-  const selecting = gate()
-  let asked = 0
-  const f = await fixture(
-    undefined,
-    undefined,
-    () => {
-      asked++
-      return JSON.stringify({ verdict: 'fyi', reason: 'progress only' })
-    },
-    selecting.promise,
-  )
-  const pause = pauser(f)
-  await messageUltimate(f, 'Working on it.')
-  // The delivery picks its triage model: nothing has asked a model yet.
-  const paused = await pause('pause')
-  expect(paused.running).toEqual([])
-  selecting.release()
-  // It reaches the gate and waits there: safe, and the model is never asked while paused.
-  await until(async () => (await f.log())!.messages.at(-1)?.triage?.verdict === 'assessing')
-  expect((await pause('state')).running).toEqual([])
-  expect(asked).toBe(0)
-  await pause('play')
-  await until(async () => (await f.log())!.messages.at(-1)?.triage?.verdict === 'fyi')
-  expect(asked).toBe(1)
-})
-it('stays Pausing… while a triage model call runs, and refreshes when it ends', async () => {
-  const asked = gate()
-  const answer = gate()
-  const f = await fixture(undefined, undefined, async () => {
-    asked.release()
-    await answer.promise
-    return JSON.stringify({ verdict: 'fyi', reason: 'progress only' })
-  })
-  const pause = pauser(f)
-  await messageUltimate(f, 'Working on it.')
-  await asked.promise
-  const pausing = await pause('pause')
-  expect(pausing.running.map((task) => task.what)).toEqual(['triage'])
-  const before = (await f.opened.harness.snapshot(PauseState, ROOT_CONVERSATION_ID, context))?.work
-  answer.release()
-  // Ending the call bumps pause's own document, which the footer watches; by then nothing runs.
-  await until(
-    async () =>
-      (await f.opened.harness.snapshot(PauseState, ROOT_CONVERSATION_ID, context))?.work ===
-      (before ?? 0) + 1,
-  )
-  expect((await pause('state')).running).toEqual([])
-  expect((await f.log())!.messages.at(-1)?.triage?.verdict).toBe('fyi')
-  await pause('play')
-})
-
-/** What the root (standing as @ultimate) holds after #recipient messages it, once that message's triage settled. */
-async function triaged(f: Awaited<ReturnType<typeof fixture>>, text: string) {
-  const recipient = await f.opened.harness.conversation(f.recipient.id, context)
-  await (
-    await recipient!.submit(
-      { type: 'input', content: `SEND ${JSON.stringify({ to: '#1', text, reply: false })}` },
-      context,
-    )
-  ).wait(context)
-  await until(async () => {
-    const m = (await f.log())!.messages.findLast((item) => item.from === f.recipient.id)
-    return m?.triage !== undefined && m.triage.verdict !== 'assessing'
-  })
-  await f.opened.root.waitForIdle(context)
-  const message = (await f.log())!.messages.findLast((item) => item.from === f.recipient.id)!
-  const view = await f.opened.root.viewState(context)
-  const entries = view.value.entries.filter((e) => e.id > (message.entry ?? 0))
-  view.dispose()
-  return { message, runs: entries.filter((e) => e.kind === 'pi.assistant').length, entries }
-}
-it('leaves an FYI message to @ultimate as context, without starting a run', async () => {
-  const f = await fixture(undefined, undefined, () =>
-    JSON.stringify({ verdict: 'fyi', reason: 'progress only' }),
-  )
-  const { message, runs } = await triaged(f, 'Still waiting on the reviewer.')
-  expect(message.triage).toEqual({ verdict: 'fyi', reason: 'progress only' })
-  expect(message.state).toBe('delivered')
-  expect(runs).toBe(0)
-  // The model reads it with its next input.
-  await (await f.opened.root.submit({ type: 'input', content: 'Next' }, context)).wait(context)
-  expect(f.transcripts.at(-1)).toContain('Still waiting on the reviewer.')
-})
-it('wakes @ultimate once when triage says act, and records the event', async () => {
-  const f = await fixture(undefined, undefined, () =>
-    JSON.stringify({ verdict: 'act', reason: 'a landing to report' }),
-  )
-  const { message, runs, entries } = await triaged(f, 'Landed abc on main.')
-  expect(message.triage).toEqual({ verdict: 'act', reason: 'a landing to report' })
-  expect(runs).toBe(1)
-  expect(entries.filter((e) => e.kind === 'board.wake')).toHaveLength(1)
-  // The wake's answer is the message's answer, recorded once its run ends.
-  await until(async () => (await f.log())!.messages.at(-1)?.answer !== undefined)
-  const feed = await f.opened.harness.snapshot(EventFeed, ROOT_CONVERSATION_ID, context)
-  expect(feed!.events.filter((e) => e.name === 'board.triaged').map((e) => e.data)).toEqual([
-    {
-      message: message.id,
-      from: f.recipient.id,
-      to: 1,
-      verdict: 'act',
-      reason: 'a landing to report',
-    },
-  ])
-})
-it('acts without asking the model when the sender asks for a decision', async () => {
-  let asked = 0
-  const f = await fixture(undefined, undefined, () => {
-    asked++
-    return JSON.stringify({ verdict: 'fyi', reason: 'wrong' })
-  })
-  const { message, runs } = await triaged(f, 'Which layout?\n1. Compact\n2. Spacious')
-  expect(message.triage).toEqual({ verdict: 'act', reason: 'asks for a decision' })
-  expect(asked).toBe(0)
-  expect(runs).toBe(1)
-})
-it('wakes as without triage when the assessment fails', async () => {
-  const f = await fixture(undefined, undefined, () => 'not json')
-  const { message, runs } = await triaged(f, 'Merged the worker.')
-  expect(message.triage).toEqual({ verdict: 'act', reason: 'assessment failed; woke as usual' })
-  expect(runs).toBe(1)
-})
-it('acts on a reply to an @ultimate question without asking the model', async () => {
-  let asked = 0
-  const f = await fixture(undefined, undefined, () => {
-    asked++
-    return JSON.stringify({ verdict: 'fyi', reason: 'wrong' })
-  })
-  await f.send(`#${f.recipient.id}`, 'Ship it?\n1. Yes\n2. No')
-  await until(async () => (await f.log())!.messages[1]?.triage?.verdict === 'act')
-  expect((await f.log())!.messages[1].triage).toEqual({
-    verdict: 'act',
-    reason: 'answers your question',
-  })
-  expect(asked).toBe(0)
-})
-it('leaves an FYI reply to @ultimate as context', async () => {
-  const f = await fixture(undefined, undefined, () =>
-    JSON.stringify({ verdict: 'fyi', reason: 'status only' }),
-  )
-  await f.send(`#${f.recipient.id}`, 'How is it going')
-  await until(async () => (await f.log())!.messages[1]?.triage?.verdict === 'fyi')
-  await f.opened.root.waitForIdle(context)
-  const [reply] = await replies(f)
-  const view = await f.opened.root.viewState(context)
-  expect(
-    view.value.entries.filter((e) => e.id > reply.id && e.kind === 'pi.assistant'),
-  ).toHaveLength(0)
-  view.dispose()
-})
-it('keeps a failed assessment across a restart: it wakes once and never reassesses', async () => {
-  let asked = 0
-  const held = gate()
-  const f = await fixture(undefined, undefined, async () => {
-    asked++
-    // The first assessment fails after the verdict could be memoized; a reassessment would say fyi.
-    if (asked === 1) {
-      await held.promise
-      return 'not json'
-    }
-    return JSON.stringify({ verdict: 'fyi', reason: 'reassessed' })
-  })
-  const recipient = await f.opened.harness.conversation(f.recipient.id, context)
-  await (
-    await recipient!.submit(
-      {
-        type: 'input',
-        content: `SEND ${JSON.stringify({ to: '#1', text: 'Merged it.', reply: false })}`,
-      },
-      context,
-    )
-  ).wait(context)
-  await until(async () => asked === 1)
-  held.release()
-  await until(async () => (await f.log())!.messages[0]?.triage?.verdict === 'act')
-  await f.opened.close()
-  await f.open()
-  await f.opened.root.waitForIdle(context)
-  const view = await f.opened.root.viewState(context)
-  expect(view.value.entries.filter((e) => e.kind === 'board.wake')).toHaveLength(1)
-  view.dispose()
-  expect(asked).toBe(1)
-  expect((await f.log())!.messages[0].triage).toEqual({
-    verdict: 'act',
-    reason: 'assessment failed; woke as usual',
-  })
-})
-it('acts on a reply to a question even after the log dropped the question', async () => {
-  let asked = 0
-  const g = gate()
-  const held = await fixture(g, undefined, () => {
-    asked++
-    return JSON.stringify({ verdict: 'fyi', reason: 'wrong' })
-  })
-  await held.send(`#${held.recipient.id}`, 'Ship it?\n1. Yes\n2. No')
-  await until(async () => (await held.log())!.messages.length === 2)
-  // The bounded log drops the question before the reply is delivered.
-  await held.opened.harness.commit(async (tx) => {
-    const log = await tx.doc(Messages, ROOT_CONVERSATION_ID)
-    log.messages = log.messages.filter((m) => m.re !== undefined)
-  }, context)
-  g.release()
-  await until(async () => (await held.log())!.messages[0]?.triage?.verdict === 'act')
-  expect((await held.log())!.messages[0].triage?.reason).toBe('answers your question')
-  expect(asked).toBe(0)
-})
-it('acts on a message too long to assess whole, without asking the model', async () => {
-  let asked = 0
-  const f = await fixture(undefined, undefined, () => {
-    asked++
-    return JSON.stringify({ verdict: 'fyi', reason: 'wrong' })
-  })
-  const { message, runs } = await triaged(f, `${'Status. '.repeat(3100)}Blocked on the lander.`)
-  expect(message.triage).toEqual({ verdict: 'act', reason: 'too long to assess' })
-  expect(asked).toBe(0)
-  expect(runs).toBe(1)
-})
-
 /** Another Ultimate on this machine, as an HTTP server that records the actions posted to it and answers `answer`. */
 async function otherUltimate(answer: (path: string, body: JsonValue) => [number, unknown]) {
   const posted: { path: string; body: JsonValue }[] = []

@@ -12,20 +12,20 @@ import {
 import type { ConversationId, GenerationResult, TaskId, Tx } from '@earendil-works/pi-durable'
 import type { ActionContext } from '../../server/actions.ts'
 import type { ExtensionHost } from '../../server/extensions.ts'
-import { Handoff, WorkspacesApi } from '../workspaces/api.ts'
+import { Branches, WorkspacesApi } from '../workspaces/api.ts'
 import { Standing, SubagentsApi } from '../subagents/api.ts'
 import { LineageApi } from '../lineage/api.ts'
-import { Messages, MessagesApi, Gate } from './api.ts'
+import { Messages, MessagesApi } from './api.ts'
 import { gist, openQuestion, openQuestionsNote, questionsParameter } from './questions.ts'
 import { callerOf } from './caller.ts'
 import { CallerAction } from './refs.ts'
 import { implementAction } from '../../lib/actions.ts'
 import { actingAs } from '../../lib/acting-as.ts'
 import { imagesParameter, SCAN_PAGE } from './images.ts'
-import { lander, parentOf } from './addresses.ts'
+import { parentOf, Started, starterOf } from './addresses.ts'
 import { delivery } from './delivery.ts'
 import { send } from './send.ts'
-import { route, Started } from './route.ts'
+import { route, working } from './route.ts'
 import { remoteAction, remoteReplyAction, tell } from './remote.ts'
 import { branchTool } from './branch.ts'
 export { gist, openQuestionsNote } from './questions.ts'
@@ -69,7 +69,6 @@ export const actions = {
         ...a,
         ...(index?.[a.name] === undefined ? {} : { id: index[a.name] }),
       })),
-      lander: await lander(host, BACKGROUND_CONTEXT),
       conversations,
     }
   },
@@ -81,30 +80,20 @@ export default function messages(host: ExtensionHost) {
   host.need(LineageApi)
   host.need(SubagentsApi)
   host.need(WorkspacesApi)
-  // The extension's own point, resolved where triage calls the model.
-  host.want(Gate)
-  // The lander's deploy handoff, through workspaces' extension point, so workspaces does not depend on messages.
-  host.implement(Handoff, {
-    send: (from, input, requestId, ctx) =>
-      send(host, from, input, ctx, undefined, undefined, requestId),
+  // What a landing asks about its branch, through workspaces' extension point, so workspaces does not depend on messages.
+  host.implement(Branches, {
+    starter: (id, ctx) => starterOf(host, id, ctx),
+    working: (tx, id) => working(tx, id),
   })
   host.implement(MessagesApi, {
     answer: async (messageId, text, ctx, device) => {
       const log = await host.harness().snapshot(Messages, ROOT_CONVERSATION_ID, ctx)
       const message = log?.messages.find((m) => m.id === messageId)
       if (!message || !openQuestion(message)) throw new Error('These questions are no longer open')
-      return send(
-        host,
-        'user',
-        { to: `#${message.from}`, text, re: messageId },
-        ctx,
-        undefined,
-        undefined,
-        undefined,
-        messageId,
-        undefined,
+      return send(host, 'user', { to: `#${message.from}`, text, re: messageId }, ctx, {
+        answerId: messageId,
         device,
-      )
+      })
     },
     openQuestions: async (ctx) =>
       (
@@ -130,16 +119,10 @@ export default function messages(host: ExtensionHost) {
           dismiss: true,
         },
         ctx,
-        undefined,
-        undefined,
-        undefined,
-        messageId,
-        true,
-        device,
+        { answerId: messageId, note: true, device },
       )
     },
-    send: (from, input, requestId, ctx) =>
-      send(host, from, input, ctx, undefined, undefined, requestId),
+    send: (from, input, requestId, ctx) => send(host, from, input, ctx, { requestId }),
     tell: (from, input, ctx, signal) => tell(host, from, input, ctx, signal),
   })
   return defineExtension({
@@ -182,7 +165,12 @@ export default function messages(host: ExtensionHost) {
         if (parent !== undefined)
           return `Use message only to update #${parent}, the conversation that started you, while you work; your final answer reaches it anyway. One-way updates (reply: false) reach #${parent} as notes it reads with its next input; ask with reply: true when you need its answer to continue.`
         const agents = await host.need(SubagentsApi).residents(ctx)
-        return `Use message to contact #id or @name. Only @ultimate messages user; send it updates with reply: false to relay. Messages wake their recipient; its answer returns as a reply and wakes you. End your turn instead of waiting. A one-way message (reply: false) gets no answer; use reply: true when you need one. Inputs identify their sender; answer here and your answer is sent to the sender automatically; do not use message to reply. A message to an agent whose message you still owe an answer becomes that answer and ends your run; use it only to attach images.\n${agents.map((a) => `@${a.name} — ${a.description}`).join('\n')}`
+        const starter = await starterOf(host, input.conversationId, ctx)
+        const upward =
+          starter === undefined
+            ? ''
+            : ` #${starter} started you: when you stop with nothing under way (no subagent, landing or reply pending), your final answer goes to it and wakes it; while work is under way it arrives as a note, and so do your one-way messages to it.`
+        return `Use message to contact #id or @name. Only @ultimate messages user. Messages wake their recipient; its answer returns as a reply and wakes you. End your turn instead of waiting. A one-way message (reply: false) gets no answer; use reply: true when you need one. Inputs identify their sender; answer here and your answer is sent to the sender automatically; do not use message to reply. A message to an agent whose message you still owe an answer becomes that answer and ends your run; use it only to attach images.${upward}\n${agents.map((a) => `@${a.name} — ${a.description}`).join('\n')}`
       }),
     ],
     tools: [
@@ -209,14 +197,10 @@ export default function messages(host: ExtensionHost) {
             (await api.memo<number>('message-id', ctx)) ??
             (await api.memo(
               'message-id',
-              await send(
-                host,
-                from,
-                { ...input, imagesFrom: api.conversationId },
-                ctx,
-                api.taskId,
-                api.callId,
-              ),
+              await send(host, from, { ...input, imagesFrom: api.conversationId }, ctx, {
+                taskId: api.taskId,
+                callId: api.callId,
+              }),
               ctx,
             ))
           const sent = (await host

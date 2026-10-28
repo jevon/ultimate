@@ -23,7 +23,6 @@ export type Definition = {
   denyTools?: string[]
   isolate?: 'none' | 'worktree'
   resident?: boolean
-  onFailure?: 'diagnose' | 'fix'
   fast?: boolean
   summaries?: boolean
   /** Overlay files merged into it, in order; saving it writes an overlay, not a whole copy. */
@@ -61,7 +60,6 @@ export type DefinitionFields = {
   denyTools?: string[]
   isolate?: 'none' | 'worktree'
   resident?: boolean
-  onFailure?: 'diagnose' | 'fix'
   fast?: boolean
   summaries?: boolean
 }

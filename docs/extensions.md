@@ -55,8 +55,8 @@ each with the browser's `device` label and, through Tailscale Serve, the `login`
 action calls get the same `Device` as `ctx.device`. A `beforeInput` hook gets no device: it sees only the input entry
 and runs for queued inputs too, so record the device from a UI action instead. A typed input and a review commit
 right after Pi admits them, which has no hook for queued inputs; answers commit with their reply. Something the user must see
-exactly once and that feeds the result the owner reports, like the lander's deploy handoff, stays a call, idempotent by
-request id; when it calls up the layering, it goes through an extension point (below).
+exactly once and that feeds the result the owner reports, like the lander waking a landed branch's starter, stays a
+call, idempotent by request id; when it calls up the layering, it goes through an extension point (below).
 `host.harness().subscribeCommits` remains for watching Pi's own records (entries, tasks, submissions, conversation
 records, usage and live documents), which are no domain events; each such watcher says so in a comment above it. Do
 not invent an event only to replace one.
@@ -92,7 +92,7 @@ extension depending on an optional one. The core layers, lowest first, each depe
 9. sidebar: the sidebar and the @ultimate button, the UI that brings the core together.
 
 Where a lower extension needs something a higher one knows, it declares the contract and the higher one fills it:
-server extension points (`conversations.trees` and `conversations.release` from conversations, `workspaces.handoff`
+server extension points (`conversations.trees` and `conversations.release` from conversations, `workspaces.branches`
 from workspaces), web points (`conversations.phase`, `conversations.task`, `conversations.unsummarized`,
 `messages.answers`, `lineage.memory-header`, `workspaces.review`), or durable events (`workspaces.landed`,
 `models.login-changed`). Optional extensions plug into the core the same way: phase, plan and questions provide

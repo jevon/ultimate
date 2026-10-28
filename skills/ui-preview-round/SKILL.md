@@ -20,11 +20,11 @@ screenshots: send them with the request.
    fill, Enter and a fixed `wait`; set the model, thinking or Play/Pause with one `eval` on `window.ultimate.api`
    (`verify-ui`), not by clicking menus.
 4. **Look first yourself**: follow the `verify-ui` skill. Fix what is off before you ask anyone.
-5. **Ask for approval**: while @ultimate's message to you is open (your task or a later question), your answer is
-   the request; otherwise `message` @ultimate with reply: true. To send screenshots, `message` it with
-   `images: "latest"`: to an open message that is your answer and ends your run. Include the URL (the tailnet URL when the preview chip shows
+5. **Ask for approval**: your final answer is the request: it reaches @ultimate once you stop with nothing under way.
+   To send screenshots, `message` @ultimate with `images: "latest"` (reply: true); to its open message that is your
+   answer and ends your run. Include the URL (the tailnet URL when the preview chip shows
    one), what changed, a short numbered "what to try" naming the conversation you seeded, and a `Decisions:` block
    (approve as is, or change something).
 6. **Iterate**: each change is a new commit and a new round; keep the same preview running.
 7. **On approval**: remove anything only the preview needed, `instance stop`, then `workspace submit` with the
-   divergence. Report the landing to @ultimate with reply: false.
+   divergence. Report the landing in your final answer.

@@ -15,7 +15,6 @@ import { basename, join, resolve as resolvePath } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { Context } from '@earendil-works/chord'
-import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context'
 import { Type } from '@earendil-works/pi-ai'
 import type { ConversationId, ToolExecutionApi } from '@earendil-works/pi-durable'
 import { defineExtension, defineTool, section } from '@earendil-works/pi-durable'
@@ -29,7 +28,6 @@ import { cleanPreview, sweepPreviews } from './cleanup.ts'
 import { implementAction } from '../../lib/actions.ts'
 import { spawnGroup, stopGroup } from '../../lib/process-group.ts'
 import type { Group, GroupProcess } from '../../lib/process-group.ts'
-import { InstanceApi } from './api.ts'
 import { Previews } from '../conversations/api.ts'
 import { ListAction } from './refs.ts'
 import type { JsonObject } from '@earendil-works/pi-durable'
@@ -466,14 +464,6 @@ export default function instanceExtension(
     return { cwd, project, conversationId }
   }
 
-  host.implement(InstanceApi, {
-    start: (args) =>
-      start(args, BACKGROUND_CONTEXT, async () => ({
-        cwd: host.ultimateRoot,
-        project: host.projectRoot,
-      })),
-    stop: (id) => stop(instances, id),
-  })
   // Concluding a conversation stops the previews it started; previews outlive an ordinary stop of its run.
   host.implement(Previews, {
     stop: async (ids) => {

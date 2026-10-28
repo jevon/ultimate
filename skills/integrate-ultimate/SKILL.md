@@ -74,18 +74,16 @@ Worker reports and submissions state divergence from the task as given (agreemen
   user is logged in to and named after what it checks (`reviewer-correctness.md`, `reviewer-simplicity.md`,
   `reviewer-architecture.md`). Details: "Review team" in
   `extensions/subagents/README.md`.
-- **Project tools or settings for a built-in agent** (@ultimate, the lander): never copy its definition. Add
+- **Project tools or settings for a built-in agent** (@ultimate, the coordinator): never copy its definition. Add
   an overlay, a file of the same name marked by `addTools: [tool]` (`[]` when it only changes settings). It may
-  override any setting (`model`, `thinking`, `onFailure`, `description`, …) but never `tools`, and its optional body
+  override any setting (`model`, `thinking`, `description`, …) but never `tools`, and its optional body
   is appended to the built-in instructions as project additions; a copy stops following the built-in and the setup
   check warns about it.
 - **Lander:** checks and push are per project, in `<project>/.ultimate/settings.json` (read once the project is
   chosen): `"lander": { "checks": [...], "push": "origin" }` lists the project's own check commands in order (an array
   runs as a concurrent group) and the remote to push to; push only with the owner's consent. The lander's checkout
-  runs the worktree setup below first. To let the lander's model resolve
-  conflicts and failing checks instead of only diagnosing them, add a `lander` definition with `onFailure: fix` and the
-  tools it needs (`.ultimate/agents/lander.md`), per project or in `~/.ultimate/agents/`. Details:
-  `extensions/workspaces/README.md`.
+  runs the worktree setup below first. The lander runs no model: a conflict or a failing check goes back to the
+  submitting branch, which fixes it and submits again. Details: `extensions/workspaces/README.md`.
 
 ## Worktree setup
 

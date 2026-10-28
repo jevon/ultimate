@@ -12,7 +12,7 @@ import type { Device } from '../../shared/events.ts'
 import { resolveImages } from './images.ts'
 import type { ImagesRef } from './images.ts'
 import { append } from './log.ts'
-import { parentOf, resolve, senderName } from './addresses.ts'
+import { parentOf, resolve, senderName, starterOf } from './addresses.ts'
 import { delivery } from './delivery.ts'
 
 // The receipt commits with the message, closing the gap before api.memo records its id.
@@ -51,13 +51,22 @@ export async function send(
     questions?: Question[]
   },
   ctx: Context,
-  taskId?: TaskId,
-  callId?: string,
-  requestId?: string,
-  answerId?: number,
-  note?: boolean,
-  device?: Device,
+  options: {
+    /** The sending tool call: its task-scoped receipt deduplicates admission. */
+    taskId?: TaskId
+    callId?: string
+    /** A pipeline's request id, deduplicated in the sender conversation. */
+    requestId?: string
+    /** The user's answer or dismissal of open message `answerId`. */
+    answerId?: number
+    /** Place it as a note, which starts no run; by default one-way messages to the sender's starter are notes. */
+    note?: boolean
+    device?: Device
+    /** A branch's final answer routed as its report: the branch shows as awaiting its starter. */
+    report?: boolean
+  } = {},
 ) {
+  const { taskId, callId, requestId, answerId, device } = options
   if (requestId !== undefined && from !== 'user') {
     const sent = await host.harness().snapshot(Requests, from as ConversationId, ctx)
     if (sent?.ids[requestId] !== undefined) return sent.ids[requestId]
@@ -82,6 +91,7 @@ export async function send(
   const questions = input.questions === undefined ? undefined : checkQuestions(input.questions)
   // Checked before resolving, which may create a standing agent's conversation.
   const parent = from === 'user' ? undefined : await parentOf(host, from, ctx)
+  const starter = parent ?? (await starterOf(host, from, ctx))
   if (parent !== undefined && input.to.replace(/^#/, '') !== String(parent))
     throw new Error(
       `Subagents report to the conversation that started them: message only #${parent}. Your final answer reaches it anyway.`,
@@ -118,19 +128,10 @@ export async function send(
     let re = input.re
     if (from !== 'user' && input.reply !== false) {
       const log = await tx.doc(Messages, ROOT_CONVERSATION_ID)
-      // A user's message still queued is unread: it gets its own turn, and does not stand in the way of this one.
+      // Only a message the agent has read is owed; one still queued is unread and gets its own turn.
       const pending = log.messages.find(
-        (m) =>
-          m.to === from &&
-          m.from === to &&
-          m.reply &&
-          (m.state === 'delivered' || (m.state === 'sent' && to !== 'user')),
+        (m) => m.to === from && m.from === to && m.reply && m.state === 'delivered',
       )
-      // Still queued, it is unread: answering it would answer what the agent has not seen.
-      if (pending?.state === 'sent')
-        throw new Error(
-          `Your answer to ${toLabel}'s message ${pending.id} is sent back automatically. Answer instead of messaging.`,
-        )
       // A message to the user who is owed an answer is that answer, with its questions and images.
       if (pending && to === 'user') {
         pending.state = 'answered'
@@ -181,6 +182,7 @@ export async function send(
       ...(callId === undefined ? {} : { call: callId }),
       ...(images ? { images } : {}),
       ...(questions ? { questions } : {}),
+      ...(options.report ? { report: true as const } : {}),
     })
     await host.emit(tx, MessageSent, {
       message: message.id,
@@ -204,7 +206,7 @@ export async function send(
         {
           message,
           steer,
-          note: note ?? (parent === to && input.reply === false),
+          note: options.note ?? (starter === to && input.reply === false),
           fromLabel,
           toLabel,
         },

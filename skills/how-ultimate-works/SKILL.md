@@ -62,11 +62,12 @@ Remember the answer: it goes into the memory about the user at setup.
 
 - What I learn about the project lives in its **memory**: decisions, facts and lessons that every new branch starts
   from.
-- I'm meant to run long and fill my context. Around 70% I write a handoff and a **dream** starts by itself: a review
+- I'm meant to run long and fill my context. Around 70% (or whenever you tell me to dream) I write a handoff and
+  start a **dream**: a review
   of what went well and badly that proposes memory changes and improvements to me, and what to build for this project
   where I keep doing the same thing by hand ("this happened in 6 branches: shall we build a tool here?"). You decide
   each proposal.
-- After the dream, **Fall asleep** starts a fresh chapter from the handoff and the memories. Nothing is deleted; the
+- Once its work is done, I prepare a fresh chapter and **Fall asleep** starts it from my handover and the memories. Nothing is deleted; the
   old chapter stays readable. A fresh chapter matters because I may have just been improved, and you want the new
   version working without stale knowledge. It happens only when it's worth it, and only with your tap.
 - That's why I work best on a model with a **1M-token context window** or more.

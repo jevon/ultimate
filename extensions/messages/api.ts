@@ -8,7 +8,7 @@ import type { EntryId } from '@earendil-works/pi-durable'
 import { defineApi } from '../../shared/extension-api.ts'
 import type { Device } from '../../shared/events.ts'
 import { MessagesDoc } from './refs.ts'
-import type { Question, Remote, Triage } from './refs.ts'
+import type { Question, Remote } from './refs.ts'
 
 /** One message as the log stores it. */
 export type Message = {
@@ -28,8 +28,8 @@ export type Message = {
   call?: string
   /** Images forwarded with it: the sender's entry that holds them, attached to the recipient's input on delivery. */
   images?: { entry: EntryId; count: number }
-  /** Whether a message to the primary agent woke it: assessing, then act or fyi with a one-line reason. */
-  triage?: Triage
+  /** A branch's final answer routed to its starter after it stopped with nothing under way: it awaits the starter. */
+  report?: true
   /** The other project's Ultimate a `remote` side names. */
   remote?: Remote
   /** The questions a reply-expected message to the user asks, answered on its card. */
@@ -80,23 +80,9 @@ export type MessagesService = {
     signal?: AbortSignal,
   ): Promise<{ message: number; delivered: number }>
 }
-export { MessageSent, Triaged } from './refs.ts'
+export { MessageSent } from './refs.ts'
 export type { Question } from './refs.ts'
 /** Messages between conversations; core, so `need` it. */
 export const MessagesApi = defineApi<MessagesService>()('messages')
 
-/** What gates the model calls Messages makes inside its tasks; an optional extension (pause) fills it. */
-export type GateService = {
-  /**
-   * Run `work`, a model call of task `task` in conversation `conversationId` described by `what`: start it only once
-   * nothing holds such work (it waits meanwhile, until `signal` aborts), and count it as in flight while it runs.
-   */
-  work<T>(
-    call: { task: number; conversationId: number; what: string },
-    work: () => Promise<T>,
-    signal: AbortSignal,
-  ): Promise<T>
-}
-/** Messages’ gate for in-task model calls, an extension point; `want` it: without a provider, work runs at once. */
-export const Gate = defineApi<GateService>()('messages.gate')
 export const tier = 'core'

@@ -57,15 +57,13 @@ export type Message = {
   call?: string
   /** Images forwarded with it: the sender's entry that holds them, attached to the recipient's input on delivery. */
   images?: { entry: number; count: number }
-  /** Whether a message to the primary agent woke it: assessing, then act or fyi with a one-line reason. */
-  triage?: Triage
+  /** A branch's final answer routed to its starter after it stopped with nothing under way: it awaits the starter. */
+  report?: true
   /** The other project's Ultimate a `remote` side names. */
   remote?: Remote
   /** The questions a reply-expected message to the user asks, answered on its card. */
   questions?: Question[]
 }
-/** A triage verdict: `act` wakes the primary agent, `fyi` leaves it as context for its next input. */
-export type Triage = { verdict: 'assessing' | 'act' | 'fyi'; reason?: string }
 export type MessagesData = { messages: Message[]; next: number }
 
 /** Every message between conversations and the user, oldest first, on conversation 1. */
@@ -91,15 +89,3 @@ export const MessageSent = defineEvent<{
   reply: boolean
   steer: boolean
 }>('board.sent')
-
-/**
- * Message `message` from `from` to the primary agent `to` was triaged: `act` woke it, `fyi` left it as context.
- * Emitted in the commit that records the verdict.
- */
-export const Triaged = defineEvent<{
-  message: number
-  from: number | 'remote'
-  to: number
-  verdict: 'act' | 'fyi'
-  reason: string
-}>('board.triaged')

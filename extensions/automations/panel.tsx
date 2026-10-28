@@ -168,13 +168,17 @@ function Trigger({ automation, now }: { automation: Automation; now: number }) {
   )
 }
 
+/** A subscriber as people address it: `#12` or `@ultimate`. */
+const address = (subscriber: number | string) =>
+  typeof subscriber === 'number' ? `#${subscriber}` : subscriber
+
 /** What a fire does: wake conversations, start a prompt run, or both. */
 function actions(automation: Automation) {
   const wakes = automation.subscribers.length
   return [
     automation.script && (automation.script.once ? 'once' : 'every time'),
     wakes > 0 &&
-      `wakes ${wakes === 1 ? `#${automation.subscribers[0]}` : `${wakes} conversations`}`,
+      `wakes ${wakes === 1 ? address(automation.subscribers[0]) : `${wakes} conversations`}`,
     automation.prompt && 'runs a prompt',
   ]
     .filter(Boolean)

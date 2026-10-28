@@ -1,5 +1,0 @@
-A jump rail beside the transcript: three thin lanes (you · the agent · milestones) with one mark per message or milestone, shaped and coloured by kind; hover or wheel over it to read each one, click (or Enter) to jump there.
-
-The `marks` action (`{ conversationId }`) classifies the conversation's own history once, without a model (`marks.ts`), and on later calls reads only the entries since, plus the commits (`coding-tools.committed`) made from it, each placed at the bash call that made it. Kinds: user inputs and user messages, the last answer of each turn, other agents' messages, branch starts, subagent starts and reports, preview starts, screenshots, submissions, landings and failures, restarts and compactions.
-
-The milestone lane depends on whose conversation it is: @ultimate shows branches, landings and restarts; a coordinator commits, previews, subagents, submissions and landings; a worker (any owned agent) commits, screenshots and previews. Marks are spaced by order, not by time or height; a shaded band shows which of them are on screen. Clicking emits the core `ultimate:reveal-entry` event, which loads older history when needed. Hidden on phones.

@@ -214,6 +214,23 @@ describe('web replica store', () => {
     store.stop()
   })
 
+  it('keeps the conversation list as it was when a switch resends it unchanged', async () => {
+    const { store, latest } = setup()
+    latest().open()
+    const list = [{ id: 1, cwd: '/my-app', busy: false }]
+    latest().send('conversations', list)
+    const before = store.getState().conversations
+    store.show(7)
+    await tick()
+    latest().open()
+    latest().send('conversations', list)
+    // The same object: nothing that reads the list renders again on a switch.
+    expect(store.getState().conversations).toBe(before)
+    latest().send('conversations', [{ ...list[0], busy: true }])
+    expect(store.getState().conversations[0].busy).toBe(true)
+    store.stop()
+  })
+
   it('shows a conversation seen before at once, until its stream brings a different snapshot', async () => {
     const { store, latest } = setup()
     latest().open()
@@ -295,6 +312,21 @@ describe('web replica store', () => {
     expect(store.getState().notices.map((notice) => notice.message)).toEqual([
       'Unknown extension document: x',
     ])
+    store.stop()
+  })
+
+  it('retries models a failed fetch left missing, also when the system info is unchanged', async () => {
+    const { store, latest, fetch } = setup()
+    fetch.mockRejectedValueOnce(new Error('offline'))
+    latest().open()
+    const system = {
+      process: { pid: 1, generation: 1, node: 'v26', startedAt: '', url: '' },
+    } as ServerEvents['system']
+    latest().send('system', system)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    expect(store.getState().models).toBeUndefined()
+    latest().send('system', system)
+    await vi.waitFor(() => expect(store.getState().models).toEqual({ providers: [], models: [] }))
     store.stop()
   })
 })

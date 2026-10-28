@@ -1,7 +1,6 @@
 import type { EntryRecord } from '@earendil-works/pi-durable'
 import {
   ArrowLeftRightIcon,
-  BellRingIcon,
   CheckIcon,
   CornerDownRightIcon,
   CornerLeftUpIcon,
@@ -9,9 +8,7 @@ import {
   ChevronRightIcon,
   GitBranchIcon,
   InboxIcon,
-  LoaderCircleIcon,
   MailIcon,
-  MoonIcon,
   SendIcon,
   SquareArrowOutUpRightIcon,
 } from 'lucide-react'
@@ -559,49 +556,6 @@ export function BranchCall({ call, core }: { call: ToolCallView; core: ReactNode
   )
 }
 
-/**
- * Whether a message woke its recipient, the primary agent: assessing while triage runs, then `action` in the accent or
- * a muted `FYI · no action`. Its reason shows on hover.
- */
-export function TriageStatus({ id }: { id: number }) {
-  const triage = useDocOf(1, MessagesDoc)?.messages.find((m) => m.id === id)?.triage
-  if (!triage) return null
-  if (triage.verdict === 'assessing')
-    return (
-      <span className="flex shrink-0 items-center gap-1" data-triage="assessing">
-        · <LoaderCircleIcon className="size-3 animate-spin" />
-        assessing…
-      </span>
-    )
-  const act = triage.verdict === 'act'
-  const Icon = act ? BellRingIcon : MoonIcon
-  return (
-    <span
-      className={cn(
-        'flex shrink-0 items-center gap-1',
-        act ? 'text-brand' : 'text-muted-foreground/60',
-      )}
-      data-triage={triage.verdict}
-      title={triage.reason}
-    >
-      · <Icon className="size-3" />
-      {act ? (
-        'action'
-      ) : (
-        <>
-          FYI<span className="max-sm:hidden"> · no action</span>
-        </>
-      )}
-    </span>
-  )
-}
-
-/** The triage verdict's one-line reason, for the open card. */
-function TriageReason({ id }: { id: number }) {
-  const reason = useDocOf(1, MessagesDoc)?.messages.find((m) => m.id === id)?.triage?.reason
-  return reason ? <span className="min-w-0 text-muted-foreground/70">{reason}</span> : null
-}
-
 export function MessageInput({ entry }: { entry: EntryRecord }) {
   const origin = entry.data as {
     id: number
@@ -635,7 +589,9 @@ export function MessageInput({ entry }: { entry: EntryRecord }) {
           ) : (
             origin.failed && <span className="shrink-0 text-destructive">· failed</span>
           )}
-          <TriageStatus id={origin.id} />
+          {origin.delivery === 'note' && (
+            <span className="shrink-0 text-muted-foreground/60">· note</span>
+          )}
         </>
       }
     >
@@ -665,8 +621,6 @@ export function MessageInput({ entry }: { entry: EntryRecord }) {
           ) : (
             origin.failed && <span className="text-destructive">failed</span>
           )}
-          <TriageStatus id={origin.id} />
-          <TriageReason id={origin.id} />
           {typeof origin.from === 'number' && (
             <button
               className="ml-auto flex cursor-pointer items-center gap-1 hover:text-foreground"

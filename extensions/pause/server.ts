@@ -4,7 +4,6 @@ import type { ConversationId, Cursor, SubmissionId } from '@earendil-works/pi-du
 import type { ExtensionHost } from '../../server/extensions.ts'
 import { implementAction } from '../../lib/actions.ts'
 import { rateLimited } from '../../lib/rate-limit.ts'
-import { Gate } from '../messages/api.ts'
 import { Standing } from '../subagents/api.ts'
 import { PauseApi } from './api.ts'
 import { lasted } from './lasted.ts'
@@ -54,8 +53,7 @@ function serial<T>(host: Pick<ExtensionHost, 'resource'>, work: () => Promise<T>
 
 /**
  * Background phases that only wait on other work (a run, a submission, a timer), which a pause holds: they never end
- * while paused and execute nothing meanwhile, so they never keep the pause from being safe. A `board.delivery` and a
- * `board.reply` triage through the gate (`gated`), which counts that model call on its own.
+ * while paused and execute nothing meanwhile, so they never keep the pause from being safe.
  */
 const PASSIVE: Record<string, string[]> = {
   'ultimate.subagent-reporter': ['deliver', 'retry'],
@@ -69,68 +67,6 @@ const PASSIVE: Record<string, string[]> = {
 export const passive = (record: { kind: string; state: unknown }) => {
   const phase = (record.state as { checkpoint?: { phase?: string } }).checkpoint?.phase
   return !!phase && (PASSIVE[record.kind] ?? []).includes(phase)
-}
-
-type Call = { task: number; conversationId: number; what: string; startedAt: number }
-/** In-task work through the gate: the calls in flight, and the ones waiting for Play. Shared across reloads. */
-const gate = (host: Pick<ExtensionHost, 'resource'>) =>
-  host.resource('pause.gate', () => ({
-    next: 1,
-    calls: new Map<number, Call>(),
-    waiters: new Set<() => void>(),
-  }))
-
-/** Bump the pause doc while paused, so the footer refreshes when in-flight work ends; none starts while paused. */
-async function bump(host: Host) {
-  if (!flag(host).paused) return
-  await host
-    .harness()
-    .commit(async (tx) => {
-      const doc = await tx.doc(State, ROOT_CONVERSATION_ID)
-      doc.work = (doc.work ?? 0) + 1
-    }, context)
-    .catch((error: unknown) => {
-      // Only the footer's refresh is lost; the work itself and the pause stand.
-      console.error('pause: refreshing the state failed:', error)
-    })
-}
-
-/** Until Play, or until `signal` aborts. */
-function played(host: Host, signal: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    const { waiters } = gate(host)
-    const stop = () => {
-      waiters.delete(done)
-      reject(signal.reason)
-    }
-    const done = () => {
-      waiters.delete(done)
-      signal.removeEventListener('abort', stop)
-      resolve()
-    }
-    if (signal.aborted) return stop()
-    waiters.add(done)
-    signal.addEventListener('abort', stop, { once: true })
-  })
-}
-
-/** The gate: work starts only while playing, and counts as running while it runs. */
-export async function gated<T>(
-  host: Host,
-  call: Omit<Call, 'startedAt'>,
-  fn: () => Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
-  while (flag(host).paused) await played(host, signal)
-  const inFlight = gate(host)
-  const id = inFlight.next++
-  inFlight.calls.set(id, { ...call, startedAt: Date.now() })
-  try {
-    return await fn()
-  } finally {
-    inFlight.calls.delete(id)
-    await bump(host)
-  }
 }
 
 /**
@@ -156,10 +92,6 @@ async function running(host: Host): Promise<RunningTask[]> {
     return tools.get(conversationId)!.get(task)
   }
   const result: RunningTask[] = []
-  for (const call of gate(host).calls.values()) {
-    const title = titles.get(call.conversationId)
-    result.push({ ...call, ...(title ? { title } : {}) })
-  }
   for (const { record, state: inspected } of tasks) {
     if (inspected.kind !== 'running' || (record.background && passive(record))) continue
     const what =
@@ -428,23 +360,17 @@ async function play(host: Host, auto = false) {
     current.paused = false
     delete current.since
     delete current.runs
-    delete current.work
     delete current.limit
     delete current.manual
   }, context)
   arm(host, await read(host))
   flag(host).paused = false
   harness.release()
-  // Gated work waiting for Play starts now.
-  for (const resume of gate(host).waiters) resume()
   return state(host)
 }
 
 export default function pauseExtension(host: Host) {
   host.implement(PauseApi, { paused: () => flag(host).paused })
-  host.implement(Gate, {
-    work: (call, fn, signal) => gated(host, call, fn, signal),
-  })
   let unsubscribe: (() => void) | undefined
   const close = async () => {
     unsubscribe?.()

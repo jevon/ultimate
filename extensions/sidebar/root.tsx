@@ -17,7 +17,13 @@ import { MessagesDoc, conversationState, emptyMessages } from '../messages/ui.ts
 import { StandingDoc } from '../subagents/ui.tsx'
 import { CommitCount, ProgressAction, Review, useWorkspaceIndex } from '../workspaces/ui.tsx'
 import type { WorkspaceConversation as ConversationSummary } from '../workspaces/ui.tsx'
-import { AgentMark, ConversationPhase, FeatureTag, useOverview } from '../conversations/ui.tsx'
+import {
+  AgentMark,
+  ConversationPhase,
+  FeatureTag,
+  useConcludedSince,
+  useOverview,
+} from '../conversations/ui.tsx'
 import type { Landing } from './landings.ts'
 import { RowMenu, saveTitle } from './rows.tsx'
 import { Section } from './section.tsx'
@@ -58,6 +64,7 @@ function useBranchState(
   const log = useDocOf(1, MessagesDoc) ?? emptyMessages
   const runState = useOverview()[conversation.id]?.runState
   const primary = useDocOf(1, StandingDoc)?.ultimate
+  const concludedSince = useConcludedSince()(conversation.id)
   const queued = index.queue.find((item) => item.conversationId === conversation.id)
   if (queued?.state === 'landing') return { label: 'landing', tone: 'success' } as const
   if (queued) return { label: 'submitted', tone: 'success' } as const
@@ -66,7 +73,10 @@ function useBranchState(
   // The sidebar's one conversation state; `working` also counts its subagents' runs.
   const state = working
     ? 'working'
-    : conversationState({ id: conversation.id, kind: 'other', runState, primary }, log)
+    : conversationState(
+        { id: conversation.id, kind: 'other', runState, primary, concludedSince },
+        log,
+      )
   if (state === 'working')
     return {
       label: phase && !phase.waiting ? phase.word : 'working',

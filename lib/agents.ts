@@ -27,8 +27,6 @@ export interface AgentDefinition {
   isolate?: 'none' | 'worktree'
   /** A standing agent: one conversation per project, started on first use. */
   resident?: boolean
-  /** What the lander does when a submission fails: explain it, or fix it and land. Only the lander reads it. */
-  onFailure?: 'diagnose' | 'fix'
   /** Requests on an `openai-codex/` or `openai/` model go on the priority (fast) tier; the fast extension reads it. */
   fast?: boolean
   /** `false`: its conversations get no automatic summaries (intent, title, reply activity, spawn refresh, abstract). */
@@ -167,7 +165,6 @@ const fields = new Set([
   'denyTools',
   'isolate',
   'resident',
-  'onFailure',
   'fast',
   'summaries',
 ])
@@ -176,19 +173,12 @@ const fields = new Set([
 function parseSettings(frontmatter: Record<string, unknown>): Partial<
   Pick<
     AgentDefinition,
-    | 'description'
-    | 'thinking'
-    | 'isolate'
-    | 'resident'
-    | 'onFailure'
-    | 'fast'
-    | 'summaries'
-    | 'denyTools'
+    'description' | 'thinking' | 'isolate' | 'resident' | 'fast' | 'summaries' | 'denyTools'
   >
 > & {
   model?: string
 } {
-  const { description, model, thinking, isolate, resident, onFailure, fast, summaries, denyTools } =
+  const { description, model, thinking, isolate, resident, fast, summaries, denyTools } =
     frontmatter
   if (denyTools !== undefined && !isTools(denyTools))
     throw new Error('denyTools must be a list of tool names')
@@ -200,8 +190,6 @@ function parseSettings(frontmatter: Record<string, unknown>): Partial<
     throw new Error('model must be a nonempty string')
   if (isolate !== undefined && isolate !== 'none' && isolate !== 'worktree')
     throw new Error('isolate must be none or worktree')
-  if (onFailure !== undefined && onFailure !== 'diagnose' && onFailure !== 'fix')
-    throw new Error('onFailure must be diagnose or fix')
   if (resident !== undefined && typeof resident !== 'boolean')
     throw new Error('resident must be a boolean')
   if (fast !== undefined && typeof fast !== 'boolean') throw new Error('fast must be a boolean')
@@ -213,7 +201,6 @@ function parseSettings(frontmatter: Record<string, unknown>): Partial<
     ...(thinking ? { thinking: thinking as ModelThinkingLevel } : {}),
     ...(isolate ? { isolate: isolate } : {}),
     ...(resident !== undefined ? { resident: resident } : {}),
-    ...(onFailure ? { onFailure: onFailure } : {}),
     ...(fast !== undefined ? { fast } : {}),
     ...(summaries !== undefined ? { summaries } : {}),
     ...(denyTools !== undefined ? { denyTools } : {}),
@@ -409,7 +396,6 @@ export interface DefinitionFields {
   denyTools?: string[]
   isolate?: 'none' | 'worktree'
   resident?: boolean
-  onFailure?: 'diagnose' | 'fix'
   fast?: boolean
   summaries?: boolean
 }
@@ -443,7 +429,6 @@ export function serializeDefinition(
     ...(frontmatter.denyTools?.length ? [`denyTools: ${toolList(frontmatter.denyTools)}`] : []),
     ...(frontmatter.isolate === 'worktree' ? ['isolate: worktree'] : []),
     ...(frontmatter.resident !== undefined ? [`resident: ${frontmatter.resident}`] : []),
-    ...(frontmatter.onFailure ? [`onFailure: ${frontmatter.onFailure}`] : []),
     ...(frontmatter.fast ? ['fast: true'] : []),
     ...(frontmatter.summaries === false ? ['summaries: false'] : []),
   ]
@@ -530,10 +515,6 @@ export async function saveOverlay(
     settings.push(`isolate: ${form.isolate ?? 'none'}`)
   if ((form.resident ?? false) !== (base.resident ?? false))
     settings.push(`resident: ${form.resident ?? false}`)
-  if (form.onFailure !== base.onFailure) {
-    if (!form.onFailure) throw cannot('clear onFailure')
-    settings.push(`onFailure: ${form.onFailure}`)
-  }
   if ((form.fast ?? false) !== (base.fast ?? false)) settings.push(`fast: ${form.fast ?? false}`)
   if ((form.summaries ?? true) !== (base.summaries ?? true))
     settings.push(`summaries: ${form.summaries ?? true}`)

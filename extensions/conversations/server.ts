@@ -244,6 +244,13 @@ export async function concludeIn(host: Pick<ExtensionHost, 'doc'>, tx: Tx, ids: 
   ui['ext.conversations.concluded'] = [
     ...new Set([...(Array.isArray(previous) ? previous : []), ...ids]),
   ]
+  // When each was last concluded, kept on resume: a report from before it stays settled (messages' open.tsx).
+  const at = ui['ext.conversations.concludedAt']
+  const now = Date.now()
+  ui['ext.conversations.concludedAt'] = {
+    ...(at && typeof at === 'object' && !Array.isArray(at) ? at : {}),
+    ...Object.fromEntries(ids.map((id) => [id, now])),
+  }
 }
 
 function conversationIds(args: ActionInput<{ ids: number[] }>): ConversationId[] {

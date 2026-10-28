@@ -116,7 +116,6 @@ it('names the failed tests of a check that exits nonzero', async () => {
 const settings = (checks: unknown) =>
   landerSettings({
     projectSettings: async () => ({ lander: { checks } }) as never,
-    notice: () => {},
   })
 
 it('reads plain commands and commands with their own timeout from settings', async () => {

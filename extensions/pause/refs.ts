@@ -26,8 +26,6 @@ export type PauseDocState = {
   manual?: boolean
   /** The user's setting: minutes after a rate-limit pause began that Ultimate presses Play by itself; unset is off. */
   autoPlay?: number
-  /** Bumped when gated in-task work (a triage model call) ends while paused, so the footer refreshes. */
-  work?: number
 }
 
 /** A task still running while paused: it finishes on its own, nothing new starts after it. */

@@ -25,6 +25,7 @@ import {
   ConcludeAction,
   hiddenConversationIds,
   ResumeAction,
+  useConcludedSince,
   useOverview,
 } from '../conversations/ui.tsx'
 import type { WorkspaceConversation as ConversationSummary } from '../workspaces/ui.tsx'
@@ -158,6 +159,7 @@ function Tree({
   const shownId = useShownId()
   const now = useNow(60_000)
   const [concludedIds] = useSidebarState<number[]>('concluded', [])
+  const concludedSince = useConcludedSince()
   const [seen] = useSidebarState<Record<string, number>>('seen', {})
   const shownTop = topOf(shownId, conversations)
   const hiddenIds = hiddenConversationIds(conversations, concludedIds)
@@ -220,6 +222,8 @@ function Tree({
     failure?: string
   }>()
   const [pending, setPending] = useState(false)
+  const [earlierOpen, setEarlierOpen] = useState(false)
+  const [concludedOpen, setConcludedOpen] = useState(false)
   const [error, setError] = useState<string>()
   const setConclude = async (id: number, conclude: boolean) => {
     if (conclude) await api.action(ConcludeAction, { ids: [id] })
@@ -343,6 +347,7 @@ function Tree({
         busy: conversation.busy,
         parked: parked.has(conversation.id),
         primary: ultimateId,
+        concludedSince: concludedSince(conversation.id),
       },
       log,
     )
@@ -408,7 +413,8 @@ function Tree({
           Sub-agents · {children.length}
         </CollapsibleTrigger>
         <CollapsibleContent className="ml-4 border-l border-border/60">
-          {children.map((child) => tree(child, true, concluded))}
+          {/* Closed sections mount nothing, so their rows are not built either: a long history has thousands. */}
+          {open && children.map((child) => tree(child, true, concluded))}
         </CollapsibleContent>
       </Collapsible>
     )
@@ -591,7 +597,7 @@ function Tree({
         )}
       <div className="mt-auto pt-3">
         {earlier.length > 0 && (
-          <Collapsible className="pt-1">
+          <Collapsible className="pt-1" open={earlierOpen} onOpenChange={setEarlierOpen}>
             <CollapsibleTrigger className="group/earlier flex w-full cursor-pointer items-center gap-1 px-4 py-1 font-mono text-[10.5px] tracking-wider text-muted-foreground uppercase outline-none hover:text-foreground">
               <ChevronRightIcon className="size-3 transition-transform group-data-[state=open]/earlier:rotate-90" />
               Earlier · {earlier.length}
@@ -601,12 +607,12 @@ function Tree({
               role="region"
               className="flex flex-col gap-px pt-1"
             >
-              {earlier.map((conversation) => tree(conversation))}
+              {earlierOpen && earlier.map((conversation) => tree(conversation))}
             </CollapsibleContent>
           </Collapsible>
         )}
         {hidden.length > 0 && (
-          <Collapsible className="pt-1">
+          <Collapsible className="pt-1" open={concludedOpen} onOpenChange={setConcludedOpen}>
             <CollapsibleTrigger className="group/concluded flex w-full cursor-pointer items-center gap-1 px-4 py-1 font-mono text-[10.5px] tracking-wider text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:text-foreground">
               <ChevronRightIcon className="size-3 transition-transform group-data-[state=open]/concluded:rotate-90" />
               Concluded · {hidden.length}
@@ -616,13 +622,14 @@ function Tree({
               className="flex flex-col gap-px pt-1"
               role="region"
             >
-              {hidden
-                .filter(
-                  (conversation) =>
-                    roots.has(conversation.id) ||
-                    !hidden.some((source) => source.id === conversation.branchOf?.conversationId),
-                )
-                .map((conversation) => tree(conversation, false, true))}
+              {concludedOpen &&
+                hidden
+                  .filter(
+                    (conversation) =>
+                      roots.has(conversation.id) ||
+                      !hidden.some((source) => source.id === conversation.branchOf?.conversationId),
+                  )
+                  .map((conversation) => tree(conversation, false, true))}
             </CollapsibleContent>
           </Collapsible>
         )}

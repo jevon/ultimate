@@ -8,7 +8,7 @@ import { LineageApi, Roots } from '../lineage/api.ts'
 import { actingAs } from '../../lib/acting-as.ts'
 import { imagesParameter } from './images.ts'
 import { send } from './send.ts'
-import { Started } from './route.ts'
+import { Started } from './addresses.ts'
 
 export const branchTool = (host: ExtensionHost) =>
   defineTool({
@@ -94,8 +94,7 @@ export const branchTool = (host: ExtensionHost) =>
           imagesFrom: api.conversationId,
         },
         ctx,
-        api.taskId,
-        api.callId,
+        { taskId: api.taskId, callId: api.callId },
       )
       if (from !== api.conversationId)
         await host

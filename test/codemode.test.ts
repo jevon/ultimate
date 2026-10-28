@@ -423,6 +423,33 @@ it("returns workspaces' refs.ts with its api.ts, so agents see its actions and e
   expect(source).toContain("actionRef<{ id: number }, WorkspaceInfo | null>('workspaces', 'info')")
 })
 
+// Three projects saw a script's later automation calls get the first call's receipt: nested calls share one task.
+it('applies each automation call in one script to its own arguments', async () => {
+  const home = await temp('ultimate-codemode-automation-')
+  directories.push(home)
+  await mkdir(join(home, 'project'))
+  const server = await createServer({
+    ultimateRoot: resolve('.'),
+    projectRoot: join(home, 'project'),
+    userHome: home,
+    home: join(home, 'state'),
+  })
+  servers.push(server)
+  const result = await run(
+    server,
+    `const created = await tools.automation({action:'create', name:'Probe', schedule:'every 1d'});
+     const id = created.split(' ')[0];
+     await tools.automation({action:'subscribe', id, to:'@ultimate'});
+     await tools.automation({action:'unsubscribe', id, to:'#${server.root.id}'});
+     const [stored] = await ultimate.action('automations', 'list');
+     return { line: await tools.automation({action:'list'}), subscribers: stored.subscribers };`,
+  )
+  expect(result.data.details.value).toEqual({
+    line: 'A1 Probe — Every 1 day — enabled → @ultimate',
+    subscribers: ['@ultimate'],
+  })
+})
+
 it('reserves trust and secret writes for the UI while allowing normal actions', async () => {
   const { server, options } = await fixture()
   await mkdir(join(options.ultimateRoot, 'server'), { recursive: true })

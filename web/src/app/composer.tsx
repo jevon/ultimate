@@ -22,6 +22,7 @@ import {
   useExtensions,
   useIntro,
   useModels,
+  useStore,
 } from '../sdk/hooks.ts'
 import { isMac } from '../sdk/keys.ts'
 import { touchKeyboard } from '../sdk/viewport.ts'
@@ -153,6 +154,9 @@ export function ComposerRedirect({ to, children }: { to?: ComposerTarget; childr
 
 export function Composer({ dock }: { dock?: boolean }) {
   const { id, entries } = useConversation()
+  // Keyed by the conversation it is for, also while that one loads: one mount per switch, not one for the loading state.
+  const scoped = useContext(ConversationIdContext)
+  const requested = useStore((state) => state.requested)
   const renderers = composerRenderers(useExtensions())
   const core = renderers.reduce<ReactNode>(
     (previous, renderer) => {
@@ -168,7 +172,7 @@ export function Composer({ dock }: { dock?: boolean }) {
         </ExtensionBoundary>
       )
     },
-    <ConversationComposer dock={dock} key={id} />,
+    <ConversationComposer dock={dock} key={id ?? scoped ?? requested} />,
   )
   return <TranscriptContext value={entries}>{core}</TranscriptContext>
 }

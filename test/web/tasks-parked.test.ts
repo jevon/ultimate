@@ -30,6 +30,8 @@ vi.mock('@/components/ai/tool', () => ({
 vi.mock('../../extensions/workspaces/ui.tsx', () => ({}))
 vi.mock('../../extensions/conversations/ui.tsx', () => ({}))
 vi.mock('../../extensions/plan/ui.tsx', () => ({}))
+vi.mock('../../extensions/messages/ui.tsx', () => ({}))
+vi.mock('@/components/ui/collapsible', () => ({}))
 const { RetryButton, TaskRow } = await import('../../extensions/tasks/web.tsx')
 const { RetryAction } = await import('../../extensions/tasks/refs.ts')
 
@@ -47,7 +49,7 @@ const tree = {
   children: new Map(),
   roots: new Map(),
   summaries: new Map(),
-  tools: new Map(),
+  meanings: new Map(),
   started: {},
   features: new Map(),
   now: 0,

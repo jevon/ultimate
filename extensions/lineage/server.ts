@@ -14,8 +14,6 @@ import {
   defineTool,
   GenerationTask,
   hook,
-  InboxDoc,
-  LiveDoc,
   ROOT_CONVERSATION_ID,
   section,
   UsageDoc,
@@ -40,11 +38,8 @@ import type { ExtensionHost } from '../../server/extensions.ts'
 import { SubmissionLanded, WorkspacesApi } from '../workspaces/api.ts'
 import type { LandedData } from '../workspaces/api.ts'
 import { Branch, Branched, LineageApi, Rooted, Roots } from './api.ts'
-import { ConversationsApi, Release, Trees } from '../conversations/api.ts'
-import { Standing, Started, Subagents } from '../subagents/api.ts'
-
-/** The fields of a message the landed-branch check reads. */
-type MessageRow = { from: unknown; reply: boolean; state: string }
+import { ConversationsApi, Trees } from '../conversations/api.ts'
+import { Standing, Started } from '../subagents/api.ts'
 import { CompactAction, ForgetAction, RecentAction, TallyDoc } from './refs.ts'
 import {
   applyMemoryOps,
@@ -546,121 +541,7 @@ function lineage(host: ExtensionHost) {
     abort: (_task, runtime, ctx) =>
       runtime.commit(() => ({ status: 'terminal', outcome: { status: 'aborted' } }), ctx),
   })
-  const conversations = host.need(ConversationsApi)
   const done = { status: 'terminal', outcome: { status: 'completed', result: null } } as const
-  /**
-   * Concludes a conversation whose submission landed, once the lander's report reached it and it and its subagents are
-   * idle. Background, so it never keeps its own conversation busy. A branch that still waits on a reply or runs a
-   * subagent then stays open; any later input resumes a concluded one.
-   */
-  const ConcludeLanded = defineTask<
-    { id: ConversationId; submission: string; lander: number },
-    { phase: 'wait' } | { phase: 'conclude' } | { phase: 'release' },
-    null
-  >({
-    name: 'lineage.conclude-landed',
-    version: 1,
-    initial: () => ({ phase: 'wait' }),
-    phases: {
-      wait: async (task, runtime, ctx) => {
-        const { id, submission, lander } = task.input
-        const report = `lander:${submission}`
-        // The lander sends the report before its task moves on: once its conversation is idle without one (an aborted
-        // lander), none comes, and the branch stays open.
-        // Started only while no report exists, and only ever awaited through Promise.race, which handles its rejection
-        // when this task's context is cancelled.
-        let landerIdle: Promise<'idle'> | undefined
-        for (;;) {
-          // Subscribed before reading, so the report's settlement after the read still ends the wait.
-          const changed = Promise.withResolvers<void>()
-          // Not a reactor: a short wait inside this task for the report's submission record, a Pi record.
-          const unsubscribe = host.harness().subscribeCommits((publication) => {
-            if (
-              publication.changes.some(
-                (change) => change.type === 'submission' && change.value.conversationId === id,
-              )
-            )
-              changed.resolve()
-          })
-          try {
-            const record = await host
-              .harness()
-              .commit((tx) => tx.submissionByRequest(id, report), ctx)
-            // Only an answered report concludes: one that ended unanswered (a provider error, a Stop, a reset) left the
-            // branch's work unfinished, so it stays open and watchdog's idle-branches note brings it up.
-            if (record?.status === 'unanswered') return runtime.commit(() => done, ctx)
-            if (record?.status === 'done') break
-            // Admitted, the report settles on its own; before that, the lander going idle means none is coming.
-            const woke = await awaitWithContext(
-              record
-                ? changed.promise
-                : Promise.race([
-                    changed.promise,
-                    (landerIdle ??= (async () => {
-                      await (
-                        await runtime.conversation(lander as ConversationId, ctx)
-                      )?.waitForIdle(ctx)
-                      return 'idle' as const
-                    })()),
-                  ]),
-              ctx,
-            )
-            if (woke === 'idle') {
-              const late = await host
-                .harness()
-                .commit((tx) => tx.submissionByRequest(id, report), ctx)
-              if (!late) return runtime.commit(() => done, ctx)
-            }
-          } finally {
-            unsubscribe()
-          }
-        }
-        // The report starts a run (the branch tells @ultimate it landed); wait for it and its foreground subagents.
-        await (await runtime.conversation(id, ctx))?.waitForIdle(ctx)
-        await runtime.commit(() => ({ status: 'running', checkpoint: { phase: 'conclude' } }), ctx)
-      },
-      // The check, the conclusion and this task's next state commit together: an input that arrives first keeps the
-      // branch open, one that arrives after resumes it, and a replay never concludes it a second time.
-      conclude: (task, runtime, ctx) =>
-        runtime.commit(async (tx) => {
-          const { id } = task.input
-          if (await keepsWorking(tx, id)) return done
-          try {
-            await conversations.concludeIn(tx, [id])
-          } catch (error) {
-            // Roots and standing agents refuse concluding before any write; they stay open by design.
-            host.notice(`Not concluding #${id} after landing: ${String(error)}`)
-            return done
-          }
-          return { status: 'running', checkpoint: { phase: 'release' } }
-        }, ctx),
-      // At least once, like the Conclude action's release: it frees only what a concluded, idle branch holds.
-      release: async (task, runtime, ctx) => {
-        await host.want(Release)?.release([task.input.id], ctx)
-        await runtime.commit(() => done, ctx)
-      },
-    },
-    abort: (_task, runtime, ctx) =>
-      runtime.commit(() => ({ status: 'terminal', outcome: { status: 'aborted' } }), ctx),
-  })
-  /** Inside `tx`: whether `id` is busy or has input queued, waits on a reply it asked for, or has a subagent running. */
-  async function keepsWorking(tx: Tx, id: ConversationId) {
-    if ((await tx.doc(LiveDoc, id)).run || (await tx.doc(InboxDoc, id)).items.length) return true
-    // Read by kind: messages depends on lineage, so lineage cannot import messages.
-    const log = host.doc('board')
-    const messages = (
-      log && ((await tx.doc(log, ROOT_CONVERSATION_ID)) as { messages?: MessageRow[] })
-    )?.messages
-    if (
-      messages?.some(
-        (m) => m.from === id && m.reply && (m.state === 'sent' || m.state === 'delivered'),
-      )
-    )
-      return true
-    for (const child of Object.values((await tx.doc(Subagents, id)).agents))
-      if ((await tx.doc(LiveDoc, child.conversationId)).run) return true
-    return false
-  }
   /**
    * Wakes @ultimate once its manual compaction `compaction` placed a summary: one follow-up input, queued behind a
    * running turn and the summary itself. Created by the compaction's own hook, so no crash between them loses it.
@@ -700,7 +581,7 @@ function lineage(host: ExtensionHost) {
     abort: (_task, runtime, ctx) =>
       runtime.commit(() => ({ status: 'terminal', outcome: { status: 'aborted' } }), ctx),
   })
-  return { Notify, Prompt, LandingNote, ConcludeLanded, Woken }
+  return { Notify, Prompt, LandingNote, Woken }
 }
 
 const WOKEN_TEXT =
@@ -1415,18 +1296,7 @@ export default function lineageExtension(host: ExtensionHost) {
     const { title } = data as { title?: string }
     await conversations.generatedTitle(tx, id, intentLine(data.intent, title))
   })
-  const { Notify, Prompt, LandingNote, ConcludeLanded, Woken } = lineage(host)
-  // A landed branch is done: conclude it once its report run ends. Background, in the submitter's conversation.
-  host.react('conclude-landed', [SubmissionLanded], async (tx, { data: landing }) => {
-    const id = landing.conversationId as ConversationId
-    const record = await tx.conversation(id)
-    if (!record || record.owner) return
-    await tx.createTask(
-      ConcludeLanded,
-      { id, submission: landing.submission, lander: landing.lander },
-      { conversationId: id, ownership: { kind: 'conversation' }, background: true },
-    )
-  })
+  const { Notify, Prompt, LandingNote, Woken } = lineage(host)
   // Every landing notes its submitter's tree root once: a tally in this reactor's transaction, any other root through
   // a delivery task created in it. The submitter's own root and conversations outside any tree get none.
   host.react('landing-notes', [SubmissionLanded], async (tx, { data: landing }) => {
@@ -1483,7 +1353,7 @@ export default function lineageExtension(host: ExtensionHost) {
   watchTally(host, context)
   return defineExtension({
     name: 'lineage',
-    tasks: [Notify, Prompt, LandingNote, ConcludeLanded, Woken, Memorize, rewindTask(host)],
+    tasks: [Notify, Prompt, LandingNote, Woken, Memorize, rewindTask(host)],
     sections: [section('lineage', (input, ctx) => lineageSection(host, input.conversationId, ctx))],
     hooks: [
       hook(GenerationTask, {

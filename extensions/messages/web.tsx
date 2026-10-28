@@ -27,6 +27,7 @@ import {
   ultimateCompact,
 } from './data.tsx'
 import { callerOf } from './caller.ts'
+import { OpenMessages } from './open.tsx'
 import { StandingDoc } from '../subagents/ui.tsx'
 import { MessagesDoc, CallerAction } from './refs.ts'
 import type { MessagesData } from './refs.ts'
@@ -80,11 +81,11 @@ function MessageNavigation() {
 }
 
 export default defineWebExtension({
-  slots: { overlay: [MessageNavigation] },
+  slots: { overlay: [MessageNavigation], 'composer.status': [OpenMessages] },
   entries: {
     'board.message': MessageInput,
     'board.reply': MessageInput,
-    // The message's row already says it woke the agent: `action`.
+    // Retired: triage's wake-up pointer in older transcripts.
     'board.wake': () => null,
     // The agent's reminder of the questions still open; the user sees them in the To-dos panel.
     'board.open': () => null,

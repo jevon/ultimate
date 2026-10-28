@@ -111,7 +111,6 @@ export function Definitions() {
             <span className="shrink-0 text-foreground/85">{definition.name}</span>
             {definition.source !== 'builtin' && <Tag>{definition.source}</Tag>}
             {definition.isolate === 'worktree' && <Tag>worktree</Tag>}
-            {definition.onFailure && <Tag>{definition.onFailure}</Tag>}
             <span className="ml-auto truncate pl-2 text-[10.5px] text-muted-foreground/70">
               {definition.model?.modelId ?? 'inherits model'}
               {definition.thinking && ` · ${definition.thinking}`}
@@ -227,7 +226,6 @@ interface Draft {
   denyTools: string[]
   resident: boolean
   isolate: 'none' | 'worktree'
-  onFailure: 'diagnose' | 'fix' | null
   fast: boolean
   summaries: boolean
   instructions: string
@@ -241,7 +239,6 @@ const draftOf = (definition?: Shown['definition'], name = ''): Draft => ({
   denyTools: definition?.denyTools ?? [],
   resident: definition?.resident ?? false,
   isolate: definition?.isolate ?? 'none',
-  onFailure: definition?.onFailure ?? null,
   fast: definition?.fast ?? false,
   summaries: definition?.summaries ?? true,
   instructions: definition?.instructions ?? '',
@@ -333,7 +330,6 @@ function Form({
           ...(draft.denyTools.length ? { denyTools: draft.denyTools } : {}),
           resident: draft.resident,
           ...(draft.isolate === 'worktree' ? { isolate: 'worktree' } : {}),
-          ...(draft.onFailure ? { onFailure: draft.onFailure } : {}),
           ...(draft.fast ? { fast: true } : {}),
           ...(draft.summaries ? {} : { summaries: false }),
         },
@@ -494,26 +490,6 @@ function Form({
               value={draft.isolate}
             />
           </Field>
-          {draft.onFailure && (
-            <Field
-              hint={
-                (draft.onFailure ?? 'diagnose') === 'fix'
-                  ? 'Resolves a conflict or failing check and commits; every check runs again before it lands.'
-                  : 'Explains why a submission did not land and the smallest fix; changes nothing.'
-              }
-              label="On failure"
-            >
-              <Segmented
-                label="On failure"
-                onChange={(onFailure) => set({ onFailure })}
-                options={[
-                  { value: 'diagnose', label: 'diagnose' },
-                  { value: 'fix', label: 'fix' },
-                ]}
-                value={draft.onFailure ?? 'diagnose'}
-              />
-            </Field>
-          )}
           <ToolsField
             onChange={(tools) => set({ tools })}
             tools={discovery.main.tools}

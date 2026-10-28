@@ -20,12 +20,12 @@ import {
   useChapters,
   useWakeUp,
 } from './chapters.tsx'
-import { HandoffCard, JournalCard, SettledCard, StartedCard } from './journal.tsx'
 import { MorningCard } from './morning.tsx'
 import { DreamDialog, dreamDialog } from './modal.tsx'
-import { DreamStatus, JournalDialog } from './pinned.tsx'
+import { DreamStatus, NextDialog } from './pinned.tsx'
+import { RequestedCard } from './requested.tsx'
 import { DreamDoc } from './refs.ts'
-import { DreamSection } from './sidebar.tsx'
+import { PreparedCard } from './sleep.tsx'
 
 /** Above this share of its context window, a compacted @ultimate has lived long enough to be worth a dream. */
 const FULL = 0.5
@@ -52,15 +52,16 @@ function contextShare(entries: readonly EntryRecord[], window: number) {
 
 /**
  * A quiet hint in the status line when @ultimate is shown, has compacted at least once and is past half its context
- * again, and no dream is open: a good time to dream. Clicking it explains what a dream does.
+ * again, and no fresh chapter is prepared: a good time to dream. Clicking it explains what a dream does.
  */
 function TimeToDream() {
   const { id, entries, agent } = useConversation()
   const ultimate = useDocOf(1, StandingDoc)?.ultimate
-  const open = useDocOf(1, DreamDoc)?.sessions.some((item) => item.endedAt === undefined)
+  const doc = useDocOf(1, DreamDoc)
   const models = useModels()
   const actions = useUltimate()
-  if (ultimate === undefined || id !== ultimate || open !== false) return null
+  if (ultimate === undefined || id !== ultimate || doc === undefined) return null
+  if (doc?.prepared && doc.sleep?.phase !== 'asleep') return null
   if (!entries.some((entry) => entry.kind === 'pi.compaction')) return null
   const window = models?.models.find(
     (model) => model.provider === agent.model?.provider && model.id === agent.model.modelId,
@@ -127,23 +128,18 @@ function WakeUp() {
 
 export default defineWebExtension({
   entries: {
-    'dream.handoff': HandoffCard,
-    'dream.started': StartedCard,
-    'dream.journal': JournalCard,
+    'dream.requested': RequestedCard,
+    'dream.prepared': PreparedCard,
     'dream.chapter': MorningCard,
-    'dream.settled': SettledCard,
   },
   slots: {
-    'sidebar.top': [
-      { component: OlderChapterBanner, order: -30 },
-      { component: DreamSection, order: -25 },
-    ],
+    'sidebar.top': [{ component: OlderChapterBanner, order: -30 }],
     'statusline.right': [
       { component: DreamStatus, order: -10, phone: true },
       TimeToDream,
       OlderChapterStatus,
     ],
-    overlay: [DreamDialog, JournalDialog, ChaptersDialog, SwitchVeil, WakeUp],
+    overlay: [DreamDialog, NextDialog, ChaptersDialog, SwitchVeil, WakeUp],
   },
   commands: [
     { id: 'dream.open', title: 'Dream…', run: (context) => context.open(dreamDialog) },

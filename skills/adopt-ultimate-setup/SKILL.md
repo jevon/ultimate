@@ -16,12 +16,12 @@ Read `.ultimate/settings.json` and every file in `.ultimate/agents/`. In one `me
 explain each piece in one or two plain lines: what it is, why Ultimate has it, and what it would be here. End with one
 multi-select question listing the pieces below, plus **None, thanks**.
 
-| Piece             | Ultimate's files                                                                         | Why it exists                                                                                                                                               |
-| ----------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Review team       | `agents/reviewer-correctness.md`, `reviewer-simplicity.md`, `reviewer-architecture.md`   | The shipped `reviewer` starts every `reviewer-*` in parallel and merges one verdict; each runs on a different model, so one model's blind spots get caught. |
-| Coordinator model | `agents/coordinator.md` (an overlay: `addTools: []`, `model`, `thinking`)                | Branches plan, decide and verify; the strongest model pays off there.                                                                                       |
-| Lander            | `settings.json` `lander.checks` and `lander.push`; `agents/lander.md` (`onFailure: fix`) | Every landing runs the project's checks on the merged result and pushes; the lander fixes a failing submission instead of only reporting it.                |
-| Worktree setup    | `settings.json` `isolates.worktree.setup`                                                | Each branch works in a fresh worktree without dependencies; setup installs them before the first tool call.                                                 |
+| Piece             | Ultimate's files                                                                       | Why it exists                                                                                                                                               |
+| ----------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Review team       | `agents/reviewer-correctness.md`, `reviewer-simplicity.md`, `reviewer-architecture.md` | The shipped `reviewer` starts every `reviewer-*` in parallel and merges one verdict; each runs on a different model, so one model's blind spots get caught. |
+| Coordinator model | `agents/coordinator.md` (an overlay: `addTools: []`, `model`, `thinking`)              | Branches plan, decide and verify; the strongest model pays off there.                                                                                       |
+| Lander            | `settings.json` `lander.checks` and `lander.push`                                      | Every landing runs the project's checks on the merged result and pushes; a failure goes back to the submitting branch to fix.                               |
+| Worktree setup    | `settings.json` `isolates.worktree.setup`                                              | Each branch works in a fresh worktree without dependencies; setup installs them before the first tool call.                                                 |
 
 Not part of the tour, never copied: `extensions.enable` (`voice-live` is a personal choice), `instance.model` (only for
 projects that preview their own extensions), `skills/ultimate-provider-smoke` and `README.md` (both about Ultimate
@@ -47,9 +47,7 @@ commands or people may survive.
   login (⌘K → **Claude Code setup…** shows it); otherwise offer the strongest model they have, or skip the overlay.
 - **Lander.** `checks` are the project's own check and test commands, found in its manifests and CI, in order (an
   array runs as a concurrent group), each with a `timeout`. Add `push` only after the owner says yes, naming the
-  remote. The `agents/lander.md` overlay keeps `onFailure: fix` and a model they have; its `addTools` drop `restart`
-  and `instance`, and its body is rewritten from the project's docs: its checks, its remote, its rule for flaky
-  tests.
+  remote.
 - **Worktree setup.** Follow "Worktree setup" in `skills/integrate-ultimate/SKILL.md` (lockfile install, `.env`,
   database, dev port) and prove it in a scratch worktree as it describes.
 

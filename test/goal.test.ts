@@ -62,14 +62,23 @@ function fakeTx() {
   } as unknown as Tx & { tasks: typeof tasks }
 }
 
-type Reminder = { id: string; name: string; enabled: boolean; subscribers?: number[] }
+type Reminder = {
+  id: string
+  name: string
+  enabled: boolean
+  subscribers?: (number | string)[]
+  key?: string
+}
 
 /** A host over `tx` with an automations ledger, and `sync()`, which runs the queued reminder tasks. */
 function fakeHost(tx: ReturnType<typeof fakeTx>) {
   const ledger = new Map<string, Reminder>()
   let next = 1
   const service = {
+    // As the real service: a repeated key returns the automation it made.
     create: async (args: Omit<Reminder, 'id' | 'enabled'>) => {
+      const made = [...ledger.values()].find((item) => args.key && item.key === args.key)
+      if (made) return made
       const id = `A${next++}`
       ledger.set(id, { id, ...args, enabled: true })
       return ledger.get(id)
@@ -219,14 +228,23 @@ it('keeps a reminder while the goal is open: paused while waiting on the user, g
       undefined as never,
     )
   await actions.start({ text: 'Make it fast' }, { host } as never)
-  // Crashes after creating, before linking, left two; and the goal was paused meanwhile. One task run adopts one,
-  // deletes the other and pauses it.
-  await service.create({ name: 'Goal reminder · goal 1', subscribers: [ULTIMATE] })
-  await service.create({ name: 'Goal reminder · goal 1', subscribers: [ULTIMATE] })
+  // A crash after creating, before linking, left one; and the goal was paused meanwhile. The task run adopts it by
+  // its key instead of making a second one, and pauses it.
+  await service.create({
+    name: 'Goal reminder · goal 1',
+    subscribers: ['@ultimate'],
+    key: 'goal.reminder:1',
+  })
   ;(await openGoal(tx))!.waiting = { reason: 'Which account?', at: 0 }
   await sync()
   expect([...ledger.values()]).toEqual([
-    { id: 'A1', name: 'Goal reminder · goal 1', subscribers: [ULTIMATE], enabled: false },
+    {
+      id: 'A1',
+      name: 'Goal reminder · goal 1',
+      subscribers: ['@ultimate'],
+      key: 'goal.reminder:1',
+      enabled: false,
+    },
   ])
   expect((await openGoal(tx))!.reminder).toBe('A1')
   await run({ action: 'resume' })

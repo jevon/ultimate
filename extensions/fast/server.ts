@@ -154,7 +154,7 @@ export default function fastExtension(host: ExtensionHost) {
     hooks: [
       hook(GenerationTask, {
         // Before each request on an OpenAI model: the definition the conversation runs (children, automation runs
-        // and standing agents record it; a branch or the lander is labelled with it) decides, as it is now.
+        // and standing agents record it; a branch is labelled with it) decides, as it is now.
         beforeRequest: async (_request, api, context) => {
           const provider = await api.snapshot(ProviderDoc, api.conversationId, context)
           if (!provider) return

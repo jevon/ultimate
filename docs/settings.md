@@ -21,8 +21,7 @@ produce a notice. To skip onboarding on a machine whose user knows Ultimate, set
 `~/.ultimate/settings.json` (user settings only): no Get ready, no Start here, no setup cards and no "set up git"
 reminder, while the Extensions panel and ⌘K Get ready… stay available and an undecided project setup keeps its
 status-line reminder. `summaryModel` (`"provider/id[:thinking]"`, default `openai-codex/gpt-6-luna:medium`; project over user)
-picks the model for automatic titles, summaries, reply summaries, tree abstracts and the
-triage that decides whether an agent's update wakes @ultimate. Set it in either file or with
+picks the model for automatic titles, summaries, reply summaries and tree abstracts. Set it in either file or with
 the "Summary model…" command, and it applies to the next request. `fastModels` (`["openai-codex/<id>", …]`, or `openai/`; project over
 user) runs those models on the priority tier through the `fast` extension, at a higher usage rate. `instance.model`
 (`"provider/id"`, project over user, default `openai-codex/gpt-6.1-sol`; `null` turns it off) is the one model every
@@ -33,8 +32,6 @@ for example `{ "laptop": { "my-app": "https://laptop.tail1234.ts.net:4747" } }`:
 must be in its `tailscale.allow`). A project running on this machine answers here first unless another machine is
 named; a project listed on several machines needs a `machine`. Cloud backups' register is asked only for projects
 `remotes` does not name (`lib/remote.ts`).
-`dream.asleepAfter` (a positive integer, project over user, default 5) is how many landed or applied changes make a
-dream that @ultimate's compaction started worth falling asleep into a fresh chapter; see `extensions/dream/README.md`.
 Compaction thresholds come from Pi's settings (`~/.pi/agent/settings.json`, then `<project>/.pi/settings.json`,
 key `compaction`: `enabled`, `reserveTokens`, `keepRecentTokens`) over Pi Durable's defaults (reserve 16k, keep 20k,
 background compaction 32k below the blocking threshold), which suit a ~200k window. `server/harness.ts`

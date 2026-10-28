@@ -6,7 +6,6 @@ Pause the whole Ultimate host and continue it with Play. This is a soft pause: r
 - The pause is stored in the root's `pause.state` document (`{ paused, since, runs, limit }`) and survives a restart: the `onOpen` callback holds the scheduler again before the server resumes scheduling.
 - **Play** (`play`, user-only) leaves one note on each conversation that was mid-turn when paused and still has its run: a `pause.note` write ("Paused for 2h 14m; the run continued after Play."), placed at the run's next step. Its request ID is the pause's start, so a retried Play leaves no second note. Idle conversations get none. Then the scheduler is released.
 - `state` returns `{ paused, since, limit, running }`: the foreground tasks still running, each with its conversation, what it runs (`model response` or the tool's name) and when it started. Background waiters (subagent reporters, automation schedulers, Messages deliveries) never count.
-- **In-task model calls** go through Messages’ `messages.gate` extension point, which pause fills: Messages’ triage summary-model call waits there while paused (it never starts), and one already in flight shows in `running` as `triage` until it ends. A call that ends while paused bumps the pause document's `work` counter, so the footer refreshes; none starts while paused, and Pause itself changes the document.
 
 ## Rate limits
 
