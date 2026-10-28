@@ -4,14 +4,17 @@ import { createApi } from '../../web/src/sdk/api.ts'
 import { createStore } from '../../web/src/sdk/store.ts'
 import { createTestHook } from '../../web/src/sdk/test-hook.ts'
 import type { ConversationSummary } from '../../shared/protocol.ts'
-import { FakeSource } from './fake-source.ts'
+import { FakeSource, fakeSubscriptions } from './fake-source.ts'
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
 function setup() {
   const sources: FakeSource[] = []
-  const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ submissionId: 9 }))
+  const server = fakeSubscriptions(sources)
+  const fetch = vi.fn<typeof globalThis.fetch>(
+    async (path, init) => server.handle(path as string, init) ?? Response.json({ submissionId: 9 }),
+  )
   const store = createStore({
     eventSource: (url) => {
       const source = new FakeSource(url)
@@ -24,7 +27,7 @@ function setup() {
   const hook = createTestHook(store, createApi(store, { fetch }))
   const main = sources[0]
   main.open()
-  main.send('view', {
+  server.of()!.send('view', {
     conversation: { id: 1 },
     entries: [],
     docs: {},

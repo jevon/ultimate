@@ -68,6 +68,15 @@ function text(value: unknown, name: string): string {
 const validUiKey = (key: unknown) =>
   typeof key === 'string' && key.length <= 200 && /^[A-Za-z0-9_.:-]+$/.test(key)
 const actionPath = /^\/api\/extensions\/([^/]+)\/actions\/([^/]+)$/
+const subscriptionPath = /^\/api\/events\/([0-9a-f-]+)\/(\d+)$/
+/** One open `/api/events` stream: a browser tab's only long-lived request, carrying all its subscriptions. */
+interface Connection {
+  send: ReturnType<typeof eventStream>['send']
+  subscriptions: Map<number, () => Promise<void>>
+  /** Subscriptions closed before they were open, so an open that arrives after its close is not started. */
+  closed: Set<number>
+  ended: boolean
+}
 function reply(response: ServerResponse, status: number, data: unknown) {
   response.writeHead(status, { 'Content-Type': 'application/json' })
   response.end(JSON.stringify(data))
@@ -79,7 +88,10 @@ function failed(response: ServerResponse, error: unknown) {
     })
   else response.destroy()
 }
-/** Start a server-sent event stream; `end` stops its heartbeat and closes it. */
+/**
+ * Start a server-sent event stream; `end` stops its heartbeat and closes it. An event of a subscription carries its id
+ * on its first data line.
+ */
 function eventStream(response: ServerResponse) {
   response.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -92,8 +104,11 @@ function eventStream(response: ServerResponse) {
     if (!response.destroyed) response.write(': heartbeat\n\n')
   }, 15000)
   return {
-    send: (name: keyof ServerEvents, data: ServerEvents[keyof ServerEvents]) => {
-      if (!response.destroyed) response.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`)
+    send: (name: keyof ServerEvents, data: ServerEvents[keyof ServerEvents], sub?: number) => {
+      if (!response.destroyed)
+        response.write(
+          `event: ${name}\n${sub === undefined ? '' : `data: ${sub}\n`}data: ${JSON.stringify(data)}\n\n`,
+        )
     },
     end: () => {
       clearInterval(heartbeat)
@@ -155,6 +170,7 @@ export async function createApi(
 ) {
   const { harness, root } = opened
   const streams = new Set<() => Promise<void>>()
+  const connections = new Map<string, Connection>()
   const graph = await harness.taskGraph(context)
   let timer: ReturnType<typeof setTimeout> | undefined
   let closed = false
@@ -266,17 +282,65 @@ export async function createApi(
         events.emit('notice', { level: 'error', message: 'Could not refresh conversation list' }),
       )
   })
-  async function stream(
-    request: IncomingMessage,
-    response: ServerResponse,
+  /** Open the tab's stream: its id, then the state every tab shares, then whatever it subscribes. */
+  async function stream(request: IncomingMessage, response: ServerResponse) {
+    const ui = await harness.watchDoc(UiState, root.id, context)
+    const sse = eventStream(response)
+    const id = crypto.randomUUID()
+    const connection: Connection = {
+      send: sse.send,
+      subscriptions: new Map(),
+      closed: new Set(),
+      ended: false,
+    }
+    connections.set(id, connection)
+    const { send } = sse
+    send('stream', { id })
+    send('system', system.current())
+    send('conversations', summaries)
+    send('ui', { value: ui!.value! })
+    ui!.start(async (_value, ops) => {
+      send('uiOps', { ops })
+    })
+    send('tasks', graph.value)
+    events.listeners.add(send)
+    const stop = async () => {
+      if (connection.ended) return
+      connection.ended = true
+      connections.delete(id)
+      events.listeners.delete(send)
+      streams.delete(stop)
+      await ui!.stop()
+      await Promise.all([...connection.subscriptions.values()].map((close) => close()))
+      sse.end()
+    }
+    streams.add(stop)
+    response.on('close', () => {
+      void stop().catch((error: unknown) => console.error('Stopping event stream failed:', error))
+    })
+    if (request.destroyed || response.destroyed) await stop()
+    return connection
+  }
+  /**
+   * Stream a conversation's view (when `view`) and documents on `connection` as subscription `sub`: snapshots first,
+   * then ops. Its id is the client's; an id is never reused, so its events never mix with a replaced subscription's.
+   */
+  async function subscribe(
+    connection: Connection,
+    sub: number,
     id: ConversationId,
     kinds: string[],
+    withView: boolean,
   ) {
     const conversation = await harness.conversation(id, context)
     if (!conversation) throw new HttpError(404, 'Unknown conversation')
     const docs: { kind: string; watch: DocumentWatch<JsonObject> }[] = []
     const unknown: string[] = []
     const watches: { stop(): Promise<unknown> }[] = []
+    const stop = async () => {
+      await Promise.all(watches.map((watch) => watch.stop()))
+    }
+    let live: Awaited<ReturnType<typeof conversation.watch>> | undefined
     try {
       for (const kind of new Set(kinds)) {
         const token = extensions.doc(kind)
@@ -293,31 +357,31 @@ export async function createApi(
           watches.push(watch)
         }
       }
-      const ui = await harness.watchDoc(UiState, root.id, context)
-      if (ui) watches.push(ui)
-      const watch = await conversation.watch(context)
-      watches.push(watch)
-      const sse = eventStream(response)
-      const { send } = sse
-      send('system', system.current())
-      send('conversations', summaries)
-      let { view, trimmed } = windowView(watch.value)
-      send('view', view)
-      send('ui', { value: ui!.value! })
-      ui!.start(async (_value, ops) => {
-        send('uiOps', { ops })
-      })
-      send('tasks', graph.value)
-      for (const kind of unknown)
-        send('notice', { level: 'warning', message: `Unknown extension document: ${kind}` })
-      for (const doc of docs) {
-        send('doc', { kind: doc.kind, value: doc.watch.value })
-        doc.watch.start(async (_value, ops) => {
-          send('docOps', { kind: doc.kind, ops })
-        })
+      if (withView) {
+        live = await conversation.watch(context)
+        watches.push(live)
       }
-      events.listeners.add(send)
-      watch.start(async (value, ops) => {
+    } catch (error) {
+      await stop()
+      throw error
+    }
+    // The stream ended, or the client closed or reused this id, while its watches opened.
+    if (connection.ended || connection.closed.has(sub) || connection.subscriptions.has(sub)) {
+      await stop()
+      return
+    }
+    connection.subscriptions.set(sub, stop)
+    const send = <K extends keyof ServerEvents>(name: K, data: ServerEvents[K]) =>
+      connection.send(name, data, sub)
+    for (const kind of unknown)
+      connection.send('notice', {
+        level: 'warning',
+        message: `Unknown extension document: ${kind}`,
+      })
+    if (live) {
+      let { view, trimmed } = windowView(live.value)
+      send('view', view)
+      live.start(async (value, ops) => {
         const rebased = windowOps(ops, trimmed)
         if (rebased) send('ops', rebased)
         else {
@@ -326,26 +390,18 @@ export async function createApi(
           send('view', view)
         }
       })
-      let stopped = false
-      const stop = async () => {
-        if (stopped) return
-        stopped = true
-        events.listeners.delete(send)
-        streams.delete(stop)
-        await watch.stop()
-        await ui!.stop()
-        await Promise.all(docs.map((doc) => doc.watch.stop()))
-        sse.end()
-      }
-      streams.add(stop)
-      response.on('close', () => {
-        void stop().catch((error: unknown) => console.error('Stopping event stream failed:', error))
-      })
-      if (request.destroyed || response.destroyed) await stop()
-    } catch (error) {
-      await Promise.all(watches.map((watch) => watch.stop()))
-      throw error
     }
+    for (const doc of docs) {
+      send('doc', { kind: doc.kind, value: doc.watch.value })
+      doc.watch.start(async (_value, ops) => {
+        send('docOps', { kind: doc.kind, ops })
+      })
+    }
+  }
+  function conversationParam(value: unknown) {
+    const id = value === undefined ? root.id : Number(value)
+    if (!Number.isSafeInteger(id) || id < 1) throw new HttpError(400, 'Invalid conversation id')
+    return id as ConversationId
   }
   return {
     conversations() {
@@ -362,16 +418,47 @@ export async function createApi(
         )
           throw new HttpError(403, 'Forbidden')
         if (request.method === 'GET' && url.pathname === '/api/events') {
-          const selected = url.searchParams.get('conversation')
-          const id = selected === null ? root.id : Number(selected)
-          if (!Number.isSafeInteger(id) || id < 1)
-            throw new HttpError(400, 'Invalid conversation id')
-          await stream(
-            request,
-            response,
-            id as ConversationId,
-            (url.searchParams.get('docs') ?? '').split(',').filter(Boolean),
-          )
+          // `conversation` and `docs` subscribe at once as subscription 0, for scripts that read one stream.
+          const selected = ['conversation', 'docs'].some((key) => url.searchParams.has(key))
+          const id = conversationParam(url.searchParams.get('conversation') ?? undefined)
+          if (selected && !(await harness.conversation(id, context)))
+            throw new HttpError(404, 'Unknown conversation')
+          const connection = await stream(request, response)
+          if (selected)
+            await subscribe(
+              connection,
+              0,
+              id,
+              (url.searchParams.get('docs') ?? '').split(',').filter(Boolean),
+              true,
+            )
+          return true
+        }
+        const subscription = subscriptionPath.exec(url.pathname)
+        if (subscription && (request.method === 'POST' || request.method === 'DELETE')) {
+          const connection = connections.get(subscription[1])
+          if (!connection) throw new HttpError(410, 'Event stream ended')
+          const sub = Number(subscription[2])
+          if (request.method === 'DELETE') {
+            const close = connection.subscriptions.get(sub)
+            connection.subscriptions.delete(sub)
+            // Not open (yet): its POST, still opening or not arrived, must not start it.
+            if (close) await close()
+            else connection.closed.add(sub)
+          } else {
+            const data = await body(request)
+            const docs = data.docs ?? []
+            if (!Array.isArray(docs) || !docs.every((kind) => typeof kind === 'string'))
+              throw new HttpError(400, 'Invalid document kinds')
+            await subscribe(
+              connection,
+              sub,
+              conversationParam(data.conversation),
+              docs,
+              data.view !== false,
+            )
+          }
+          json(200, { ok: true })
           return true
         }
         const history = /^\/api\/conversations\/(\d+)\/history$/.exec(url.pathname)

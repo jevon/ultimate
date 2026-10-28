@@ -26,7 +26,7 @@ await page.addInitScript(() => {
   const w = window as unknown as Record<string, unknown>
   // `window.ultimate` (web/src/sdk/test-hook.ts) for the readiness wait.
   sessionStorage.setItem('ultimate.driven', '1')
-  const log: { t: number; ev: string; url: string; kb?: number }[] = []
+  const log: { t: number; ev: string; url: string; kb?: number; conversation?: number }[] = []
   w.switchEvents = log
   const Native = window.EventSource
   window.EventSource = class extends Native {
@@ -34,15 +34,19 @@ await page.addInitScript(() => {
       super(url, init)
       const href = String(url)
       log.push({ t: performance.now(), ev: 'open', url: href })
-      for (const name of ['view', 'conversations', 'system', 'tasks', 'ui', 'doc'])
-        this.addEventListener(name, (event) =>
+      for (const name of ['stream', 'view', 'conversations', 'system', 'tasks', 'ui', 'doc'])
+        this.addEventListener(name, (event) => {
+          const data = (event as MessageEvent<string>).data
+          // A subscription's view is `<sub>\n{"conversation":{"id":N},…}`: read its id without parsing the rest.
+          const id = /^\d+\n\{"conversation":\{"id":(\d+)/.exec(data.slice(0, 80))?.[1]
           log.push({
             t: performance.now(),
             ev: name,
             url: href,
-            kb: (event as MessageEvent<string>).data.length / 1024,
-          }),
-        )
+            kb: data.length / 1024,
+            ...(id && { conversation: Number(id) }),
+          })
+        })
     }
   }
   const long: { t: number; d: number }[] = []
@@ -74,7 +78,7 @@ for (let round = 0; round < rounds; round++)
   for (const target of list.split(',').map(Number)) {
     const result = await page.evaluate(async (id) => {
       const w = window as unknown as {
-        switchEvents: { t: number; ev: string; url: string; kb?: number }[]
+        switchEvents: { t: number; ev: string; url: string; kb?: number; conversation?: number }[]
         switchLongTasks: { t: number; d: number }[]
         switchLastMutation?: number
       }
@@ -85,7 +89,7 @@ for (let round = 0; round < rounds; round++)
       const pause = () => new Promise((resolve) => setTimeout(resolve, 10))
       const deadline = started + 20_000
       const ownView = () =>
-        w.switchEvents.find((item) => item.ev === 'view' && item.url.includes(`conversation=${id}`))
+        w.switchEvents.find((item) => item.ev === 'view' && item.conversation === id)
       while (!ownView() && performance.now() < deadline) await pause()
       while (performance.now() < deadline && performance.now() - (w.switchLastMutation ?? 0) < 300)
         await pause()
@@ -98,7 +102,8 @@ for (let round = 0; round < rounds; round++)
         longMs: Math.round(long.reduce((sum, item) => sum + item.d, 0)),
         maxLongMs: Math.round(Math.max(0, ...long.map((item) => item.d))),
         eventKb: Math.round(w.switchEvents.reduce((sum, item) => sum + (item.kb ?? 0), 0)),
-        streams: w.switchEvents.filter((item) => item.ev === 'open').length,
+        // A tab keeps one stream; a switch that opens one (a reconnect) shows up here.
+        streams: w.switchEvents.filter((item) => item.ev === 'stream').length,
         heapMb: Math.round(memory.usedJSHeapSize / 1048576),
       }
     }, target)
