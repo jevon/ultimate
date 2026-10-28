@@ -167,6 +167,8 @@ it('answers a decisions card with letters, arrows and Enter', async () => {
   await confirm.waitFor()
   await page.keyboard.press('Escape')
   await confirm.waitFor({ state: 'detached' })
+  // Keep editing opens the first question still unanswered.
+  await partial.locator('[data-question="1"] fieldset[data-current]').waitFor()
   await partial.getByRole('button', { name: 'Send 1 of 3' }).click()
   await confirm.waitFor()
   await page.keyboard.press('Enter')

@@ -301,7 +301,6 @@ function Card({
     !words[index] && pickIndices(question).length ? [index] : [],
   )
   const settled = phase !== 'answering'
-  const asking = confirming && ready.length < questions.length
 
   // Leaving the page inside the undo window sends what was sent: only Undo takes it back.
   useEffect(
@@ -378,12 +377,12 @@ function Card({
       setBusy(false)
     }
   }
-  /** Sends `list` with the note; with questions left unanswered, only once the user confirms (`anyway`). */
-  const send = (list: Answer[] = ready, anyway = false) => {
+  /** Sends `list` with the note; with questions left unanswered, asks first and sends on the next send. */
+  const send = (list: Answer[] = ready) => {
     const extra = note.trim()
     if ((!list.length && !extra) || pending.current || phase !== 'answering') return
     clearTimeout(advance.current)
-    if (!anyway && list.length < questions.length) return setConfirming(true)
+    if (!confirming && list.length < questions.length) return setConfirming(true)
     setConfirming(false)
     const fire = () => {
       pending.current = undefined
@@ -463,9 +462,11 @@ function Card({
         (!root.current?.contains(target) && target?.closest('[data-questions-card], button, a'))
       )
         return
-      if (asking && (event.key === 'Escape' || (event.key === 'Enter' && !event.shiftKey))) {
+      if (confirming && (event.key === 'Escape' || (event.key === 'Enter' && !event.shiftKey))) {
+        // Enter on a focused button presses that button instead.
+        if (event.key === 'Enter' && target?.closest('button')) return
         event.preventDefault()
-        if (event.key === 'Enter') send(ready, true)
+        if (event.key === 'Enter') send()
         else keepEditing()
         return
       }
@@ -626,12 +627,12 @@ function Card({
         <Note value={note} disabled={busy} hint={hints} onChange={setNote} onSend={() => send()} />
       </div>
       <div className="flex flex-wrap items-center gap-2 px-3 pt-2 pb-2.5">
-        {asking ? (
+        {confirming ? (
           <Confirm
             done={ready.length}
             total={questions.length}
             hints={hints}
-            onSend={() => send(ready, true)}
+            onSend={() => send()}
             onEdit={keepEditing}
           />
         ) : (
