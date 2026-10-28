@@ -88,8 +88,8 @@ async function children(tx: Tx, id: ConversationId): Promise<boolean> {
 }
 
 /**
- * After a branch's run, its final answer reaches the conversation that started it, unless it already does as the
- * answer to the starter's reply-enabled message. A branch that stops with nothing under way reports: its answer wakes
+ * After a branch's run, its final answer reaches the conversation that started it, unless it already goes back as the
+ * answer to a reply-enabled message, the starter's or another conversation's. A branch that stops with nothing under way reports: its answer wakes
  * the starter. One that still waits on work (subagents, the lander, a reply) leaves it as a note. Routing goes only
  * from a branch to its starter, which existed first, and a routed message is one-way: it cannot ping-pong.
  */
@@ -129,12 +129,16 @@ export function route(host: ExtensionHost) {
               : [],
           )
           if (!answered.length) return undefined
+          // board.delivery returns an answer to a reply-enabled message to whoever sent it. To the starter's, that is
+          // where the answer goes; when every input was another conversation's question (a sibling's, a subagent's),
+          // it goes back to them, not also to the starter.
+          let elsewhere = true
           for (const entryId of answered) {
             const entry = await tx.entry(entryId)
-            // board.delivery returns the answer to the starter's reply-enabled message.
             const data = entry?.data as { from?: unknown; reply?: unknown } | undefined
-            if (entry?.kind === 'board.message' && data?.from === by && data.reply === true)
-              return undefined
+            const asked = entry?.kind === 'board.message' && data?.reply === true
+            if (asked && data.from === by) return undefined
+            if (!asked) elsewhere = false
           }
           const message = (await tx.entry(answer))?.model?.[0]
           if (
@@ -143,8 +147,20 @@ export function route(host: ExtensionHost) {
             message.stopReason === 'aborted'
           )
             return undefined
+          const report = !(await underway(host, tx, id))
+          if (elsewhere) {
+            if (!report) return undefined
+            // Answering them ended the branch's work, though, and the starter may have had its last update only as a
+            // note: it becomes the report, so the starter still wakes when the branch stops.
+            const last = (await tx.doc(Messages, ROOT_CONVERSATION_ID)).messages.findLast(
+              (m) => (m.from === id && m.to === by) || (m.from === by && m.to === id),
+            )
+            if (last?.from !== id || last.reply || last.report || last.re !== undefined)
+              return undefined
+            return { text: last.text, report }
+          }
           const text = message.content.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('')
-          return { text, report: !(await underway(host, tx, id)) }
+          return { text, report }
         }, ctx)
         if (routed?.text.trim())
           await send(host, id, { to: `#${by}`, text: routed.text, reply: false }, ctx, {

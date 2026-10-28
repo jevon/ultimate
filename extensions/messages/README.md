@@ -55,7 +55,10 @@ conversation that started you is a note, and stopping with nothing under way is 
   saved in the task input for replay.
 - **Reports.** After each run of a branch, a background `board.route` task (one per generation, from an `onYield`
   hook) looks at its final answer. The answer to the starter's reply-enabled message already returns as that
-  message's reply, so it is skipped, as are empty, failed and aborted answers. Otherwise, if nothing of the branch is
+  message's reply, so it is skipped, as are empty, failed and aborted answers. So is a run whose every input was
+  another conversation's reply-enabled message (a sibling branch's, a subagent's question): its answer goes back to
+  them only. If that run left the branch with nothing under way and the starter's latest message from it was a note,
+  that note's text goes again as the report, so the starter still wakes. Otherwise, if nothing of the branch is
   still under way (no run or queued input in it or a subagent at any depth, no subagent report or waking `notify`
   on its way, no submission in the lander's queue or a failure being reported, no reply-enabled message of its own
   still waiting), the answer goes to the starter as a one-way message with

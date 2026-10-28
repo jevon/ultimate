@@ -1484,6 +1484,46 @@ it("does not route an answer to the starter's reply-enabled message", async () =
   await b.settled()
   expect((await b.from()).map((m) => m.re)).toEqual([1, 3])
 })
+it("does not route a branch's answer to a sibling's question to its starter", async () => {
+  // #18872 answered sibling #18345's question; the answer went back to #18345 and, a second time, to @ultimate.
+  const f = await fixture()
+  const b = await branched(f)
+  await (
+    await f.recipient.submit(
+      { type: 'input', content: 'SEND ' + JSON.stringify({ to: `#${b.id}`, text: 'Hook?' }) },
+      context,
+    )
+  ).wait(context)
+  await until(async () => (await b.from()).length === 2)
+  await b.settled()
+  const question = (await f.log())!.messages.find((m) => m.text === 'Hook?')!
+  expect((await b.from()).map((m) => [m.to, m.re])).toEqual([
+    [1, 1],
+    [f.recipient.id, question.id],
+  ])
+})
+it('still wakes the starter when a sibling question queued behind the last work run ends it', async () => {
+  const f = await fixture()
+  const b = await branched(f)
+  await b.branch.submit({ type: 'input', content: 'HOLD' }, context)
+  await until(f.holding)
+  await (
+    await f.recipient.submit(
+      { type: 'input', content: 'SEND ' + JSON.stringify({ to: `#${b.id}`, text: 'Hook?' }) },
+      context,
+    )
+  ).wait(context)
+  f.hold.release()
+  await until(async () => (await b.from()).some((m) => m.to === f.recipient.id))
+  await b.settled()
+  const toStarter = (await b.from()).filter((m) => m.to === 1).slice(1)
+  // However the two runs' routes interleave, the starter ends with one report, and never the answer to the sibling.
+  expect(toStarter.filter((m) => m.report)).toHaveLength(1)
+  expect(toStarter.at(-1)?.report).toBe(true)
+  expect(toStarter.some((m) => m.text.startsWith(`Answer: Message from #${f.recipient.id}`))).toBe(
+    false,
+  )
+})
 it("routes an answer to the starter's one-way message, waking it for a decision without a loop", async () => {
   const f = await fixture()
   const b = await branched(f)
