@@ -13,7 +13,7 @@
   "lander": {
     "checks": [
       { "command": "pnpm check", "timeout": 120 },
-      { "command": "pnpm test --maxWorkers=4", "timeout": 400 }
+      { "command": "pnpm test --maxWorkers=2", "timeout": 900 }
     ],
     "push": "fork"
   }
