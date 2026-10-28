@@ -5,7 +5,9 @@ Each extension is a folder `extensions/<name>/`: `server.ts` exports a Durable e
 (`defineWebExtension` from `@/sdk`), and `README.md` describes it. The server facet may export `docs`, an array of conversation document tokens;
 subscribe with `/api/events?conversation=<id>&docs=<kind>,<kind>` for `doc` snapshots and `docOps` batches. A browser
 tab keeps one `/api/events` stream and adds and removes subscriptions on it with `POST` and `DELETE
-/api/events/<stream>/<sub>` (`ServerEvents` in `shared/protocol.ts`).
+/api/events/<stream>/<sub>` (`ServerEvents` in `shared/protocol.ts`). The query subscribes as sub 0. A subscription's
+`view`, `ops`, `doc` and `docOps` events carry its id on their first data line, so their `data` reads `0\n{…}`: parse
+what follows the first newline.
 The Documents tab shows each exported kind through the renderer a web facet registers (`documents: [{ kind, title, component }]`), or as JSON.
 Local imported modules reload with the facet. Failed loads leave the previous version installed.
 

@@ -315,7 +315,7 @@ it('renders <ConversationScope><Conversation/></ConversationScope> and sends, st
   expect(harness.fetch).toHaveBeenLastCalledWith('/api/conversations/17/abort', expect.anything())
 })
 
-it('adds a view to a document-only stream and keeps documents after the scope releases', async () => {
+it('adds a view to a document-only subscription, keeps documents after the scope releases, and watches the view again from a snapshot', async () => {
   const releaseDoc = store.watchDocOf(23, counter.kind)
   effects.push(releaseDoc)
   await tick()
@@ -331,10 +331,26 @@ it('adds a view to a document-only stream and keeps documents after the scope re
   both.send('doc', { kind: counter.kind, value: { n: 2 } })
   releaseView()
   await tick()
-  expect(both.closed).toBe(false)
+  // Documents only again: the value stays until the new subscription's snapshot.
+  expect(both.closed).toBe(true)
   expect(store.getState().viewsOf[23]).toBeUndefined()
-  both.send('docOps', { kind: counter.kind, ops: [['s', ['n'], 3]] })
+  expect(store.getState().docsOf[23]?.[counter.kind]).toEqual({ n: 2 })
+  const only = source(23)
+  expect(only.view).toBe(false)
+  only.send('doc', { kind: counter.kind, value: { n: 2 } })
+  only.send('docOps', { kind: counter.kind, ops: [['s', ['n'], 3]] })
   expect(store.getState().docsOf[23]?.[counter.kind]).toEqual({ n: 3 })
+
+  // Watched again, the view comes from a new subscription's snapshot, and its ops apply to it.
+  effects.push(store.watchConversation(23))
+  await tick()
+  expect(only.closed).toBe(true)
+  const again = source(23)
+  again.send('view', view(23, 'back'))
+  again.send('ops', [['a', ['entries', 0, 'model', 0, 'content'], ' again']])
+  expect(store.getState().viewsOf[23]?.entries[0].model?.[0]).toMatchObject({
+    content: 'back again',
+  })
 })
 
 function Action() {

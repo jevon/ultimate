@@ -400,9 +400,9 @@ export function createStore(options: StoreOptions = {}) {
       const list = [...kinds.keys()].toSorted().join(',')
       const stream = docStreams.get(conversation)
       const view = watchedViews.has(conversation)
-      // A view no scope needs anymore keeps streaming until the kinds change; nothing reads it.
-      if (stream?.kinds !== list || (view && !stream.view)) openDocs(conversation, list, view)
-      // Kinds nobody watches anymore go; the rest keep their value until the new stream's snapshot replaces it.
+      // A view watched again needs a fresh snapshot, so adding or dropping it resubscribes.
+      if (stream?.kinds !== list || stream.view !== view) openDocs(conversation, list, view)
+      // Kinds nobody watches anymore go; the rest keep their value until the new subscription's snapshot replaces it.
       docsOf[conversation] = Object.fromEntries(
         Object.entries(state.docsOf[conversation] ?? {}).filter(([kind]) => kinds.has(kind)),
       )

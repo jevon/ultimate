@@ -46,7 +46,8 @@ node .ultimate/skills/measure-switch/profile-summary.ts ~/switch-perf/a.cpuprofi
   shapes: a long conversation, a lander, @ultimate, one with many subagents
   (`sqlite3 <copy> "select conversation_id, count(*) from entries group by 1 order by 2 desc limit 10"`).
 - Round 0 is cold (never shown in the tab), later rounds warm (`store.show` paints the kept replica first).
-- `settledMs` and `longMs` are the user-facing numbers; `eventKb` and `streams` show what the server sends.
+- `settledMs` and `longMs` are the user-facing numbers; `eventKb` shows what the server sends. A tab keeps one event
+  stream and a switch only resubscribes on it, so `streams` (new streams during the switch) should stay 0.
 - Compare before and after in one session, on one instance home: run main, stop, apply the change, start again on the
   same home. Numbers drift between sessions with machine load; repeat runs and compare medians.
 - Previews run React in development mode: about 30–45% of busy time is `jsxDEV` and render logging, which the summary

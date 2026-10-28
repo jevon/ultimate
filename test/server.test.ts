@@ -939,7 +939,9 @@ export const actions = { list: async (_args, ctx) => ctx.host.conversations() }`
     await server.harness.waitForIdle(context)
     await until(() => of('docOps').length === 2)
     expect(of('docOps')).toEqual([0, 5])
+    // Closing the stream ends it with all its subscriptions.
     await stream.close()
+    await until(async () => (await call('DELETE', 5)) === 410)
   })
   it('runs logins in the models extension: prompt, answer, cancel, no credential leak, dead flows cancelled', async () => {
     const { server, options } = await fixture(false, {

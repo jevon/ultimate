@@ -73,7 +73,7 @@ const subscriptionPath = /^\/api\/events\/([0-9a-f-]+)\/(\d+)$/
 interface Connection {
   send: ReturnType<typeof eventStream>['send']
   subscriptions: Map<number, () => Promise<void>>
-  /** Subscriptions closed, kept so an open that arrives after its close is not started. */
+  /** Subscriptions closed before they were open, so an open that arrives after its close is not started. */
   closed: Set<number>
   ended: boolean
 }
@@ -441,9 +441,10 @@ export async function createApi(
           const sub = Number(subscription[2])
           if (request.method === 'DELETE') {
             const close = connection.subscriptions.get(sub)
-            connection.closed.add(sub)
             connection.subscriptions.delete(sub)
-            await close?.()
+            // Not open (yet): its POST, still opening or not arrived, must not start it.
+            if (close) await close()
+            else connection.closed.add(sub)
           } else {
             const data = await body(request)
             const docs = data.docs ?? []

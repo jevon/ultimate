@@ -262,8 +262,8 @@ export async function post(server: string | { url: string }, path: string, data:
   })
   return { status: response.status, data: await response.json() }
 }
-/** Read `/api/events`; the query subscribes at open as sub 0 (`?docs=` alone: the root's view). */
-export async function attach(server: string | { url: string }, query = '?docs=') {
+/** Read `/api/events`; the query subscribes at open as sub 0, by default to the root (#1). */
+export async function attach(server: string | { url: string }, query = '?conversation=1') {
   const url = typeof server === 'string' ? server : server.url
   const controller = new AbortController()
   const events: { name: keyof ServerEvents; data: unknown; sub?: number }[] = []
