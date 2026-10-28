@@ -3,10 +3,11 @@
 import type { DiagramPlugin, MermaidErrorComponentProps } from 'streamdown'
 import { CodeBlock } from './code-block.tsx'
 
-const swatch = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
+let swatch: CanvasRenderingContext2D | null | undefined
 
 /** A theme token as hex: Mermaid derives shades from its colours and reads no `oklch()`. */
 function hex(token: string) {
+  swatch ??= document.createElement('canvas').getContext('2d', { willReadFrequently: true })
   if (!swatch) return undefined
   swatch.clearRect(0, 0, 1, 1)
   swatch.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(`--${token}`)
