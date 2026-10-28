@@ -24,12 +24,25 @@ An idle recipient wakes. A busy one receives a follow-up after its current run, 
 `steer: true`. `steer` defaults to `true` for @ultimate's messages, to any recipient including standing agents, and
 to `false` for everyone else; an explicit value always wins. The typed `board.message` input identifies its sender and explains where its answer goes. Its `delivery`
 field records `steer` or `followUp`.
+A message to a recipient that is running when it is sent is marked `queued: 'steer' | 'followUp'` in the posting
+commit, so it never looks lost: the `message` tool returns `Message N queued as a follow-up: #id is busy…` (or
+`queued: … after its current step` for a steer), the outgoing card reads `queued as follow-up` or `queued to steer`,
+and delivery clears the mark when the input leaves the recipient's queue. An agent's queued reply-enabled follow-up
+that still waits behind a run when its delivery starts also leaves the recipient a `board.queued` note (a write, `board-queued:<id>`, rendering nothing), placed before the input,
+so its run's next request reads `Queued for you: message N from #id, expecting your answer: …` and it neither
+answers early nor takes the question for lost.
 The answer returns as `board.reply`, steering the sender. An unanswered input produces a failure reply instead.
+A run that took several reply-enabled messages from one sender (steers at different tool rounds, follow-ups placed
+together) settles them all with its one final answer, and they get one reply: the first delivery to record the answer
+marks every delivered message from that sender whose input settled with the same answer, and appends one reply with
+`re` (the oldest) and `also` (the rest), read as `Reply from #7 to your messages 4 and 6`. The other deliveries find
+that reply and send nothing.
 Answer directly rather than messaging the sender. A reply-enabled agent message back to a sender whose
-reply-enabled message the agent has received and not answered becomes that answer: in one commit `send()` marks the
-original `answered`, appends the reply (`re`, `reply: false`, its `images`, its `call`) and starts the delivery task
-in its reply phase; its `steer` and `reply` flags are ignored. The original's delivery then sees it answered and keeps
-the final answer local, and the tool returns `Sent as your answer to message N.` with `terminate`, so the run ends
+reply-enabled message the agent has received and not answered becomes that answer: in one commit `send()` marks every
+such owed message `answered`, appends the reply (`re` and `also` naming them, `reply: false`, its `images`, its
+`call`) and starts the delivery task in its reply phase; its `steer` and `reply` flags are ignored. The originals'
+deliveries then see them answered and keep the final answer local, and the tool returns
+`Sent as your answer to message N.` (or `messages N and M`) with `terminate`, so the run ends
 without restating it. A replayed call finds the reply through the `board.sent` receipt and memo, so it is sent once.
 `reply: false` updates and other recipients are unaffected. @ultimate's message to `user` is never refused for an
 owed answer: while a user's message it has read is open, the message answers it (marked `answered`, the new one
@@ -55,7 +68,10 @@ conversation that started you is a note, and stopping with nothing under way is 
   saved in the task input for replay.
 - **Reports.** After each run of a branch, a background `board.route` task (one per generation, from an `onYield`
   hook) looks at its final answer. The answer to the starter's reply-enabled message already returns as that
-  message's reply, so it is skipped, as are empty, failed and aborted answers. Otherwise, if nothing of the branch is
+  message's reply, so it is skipped, as are empty, failed and aborted answers. So is a run whose every input was
+  another conversation's reply-enabled message (a sibling branch's, a subagent's question): its answer goes back to
+  them only. If that run left the branch with nothing under way and the starter's latest message from it was a note,
+  that note's text goes again as the report, so the starter still wakes. Otherwise, if nothing of the branch is
   still under way (no run or queued input in it or a subagent at any depth, no subagent report or waking `notify`
   on its way, no submission in the lander's queue or a failure being reported, no reply-enabled message of its own
   still waiting), the answer goes to the starter as a one-way message with
@@ -197,18 +213,20 @@ type Message = {
   at: number // Unix milliseconds
   reply: boolean
   re?: number
+  also?: number[] // the other messages a reply answers, after re
   state: 'sent' | 'delivered' | 'answered' | 'dismissed' | 'failed' | 'stopped'
   entry?: EntryId
   answer?: EntryId
   error?: string
   remote?: { project: string; machine: string; key: string; id?: number } // the other Ultimate
   report?: true // a branch's routed final answer after it stopped with nothing under way
+  queued?: 'steer' | 'followUp' // waiting in a busy recipient's queue; cleared once placed
   questions?: Question[] // what a reply-expected message to the user asks (see Questions)
 }
 ```
 
 `board.message` data: `{ id, from, text, reply, delivery: 'steer' | 'followUp' | 'note', images?, remote? }`, where `images` counts the forwarded images in its model content; the card shows them as thumbnails.
-`board.reply` data: `{ id, re, from, text, failed, stopped?, images? }` (`stopped` also sets `failed`: neither is an answer); a reply that a `message` became carries its images like a message does. A reply has its own id and `re` points to the original message.
+`board.reply` data: `{ id, re, also?, from, text, failed, stopped?, images? }` (`stopped` also sets `failed`: neither is an answer); a reply that a `message` became carries its images like a message does. A reply has its own id and `re` points to the original message.
 The reply's `answer` links to the recipient's assistant entry; the original also stores its input `entry`.
 
 ## Actions

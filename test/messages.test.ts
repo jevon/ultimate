@@ -515,6 +515,53 @@ it('turns a message to a sender it owes an answer into that answer, once, with i
   view.dispose()
   expect(f.observed.filter((t) => t.startsWith('Reply from'))).toHaveLength(1)
 })
+/**
+ * Two messages from #1 that steer the recipient's held run at two tool rounds (the first holds once more), so the
+ * run's one final answer settles both.
+ */
+async function twoOpen(f: Awaited<ReturnType<typeof fixture>>, second: string) {
+  await f.recipient.submit({ type: 'input', content: 'HOLD' }, context)
+  await until(f.holding)
+  await f.send(`#${f.recipient.id}`, 'HOLD')
+  await f.send(`#${f.recipient.id}`, second)
+  f.hold.release()
+  await f.recipient.waitForIdle(context)
+  await f.opened.harness.waitForIdle(context)
+  await until(async () =>
+    (await f.opened.harness.inspect(context)).tasks.every(
+      (t) => t.record.kind !== 'board.delivery',
+    ),
+  )
+  return (await f.log())!.messages
+}
+it('sends one reply naming every open message a run answered', async () => {
+  // #14820 answered three messages from @ultimate in one run, and its answer arrived three times.
+  const f = await fixture()
+  const [first, second, reply, ...rest] = await twoOpen(f, 'Second')
+  expect(rest).toEqual([])
+  expect([first.state, second.state]).toEqual(['answered', 'answered'])
+  expect(reply).toMatchObject({ from: f.recipient.id, to: 1, re: first.id, also: [second.id] })
+  expect(await replies(f)).toHaveLength(1)
+  expect(f.observed.filter((t) => t.startsWith('Reply from'))).toEqual([
+    expect.stringMatching(
+      new RegExp(`^Reply from #${f.recipient.id} to your messages ${first.id} and ${second.id}:`),
+    ),
+  ])
+})
+it('answers every owed message with one message, failing none', async () => {
+  // #10238 answered with a message; it settled one of three owed messages, and the other two came back "failed".
+  const f = await fixture()
+  const [first, second, reply, ...rest] = await twoOpen(
+    f,
+    'SEND ' + JSON.stringify({ to: '#1', text: 'Both done' }),
+  )
+  expect(rest).toEqual([])
+  expect([first.state, second.state]).toEqual(['answered', 'answered'])
+  expect(reply).toMatchObject({ text: 'Both done', re: first.id, also: [second.id] })
+  expect((await toolResults(f)).at(-1)).toContain(
+    `Sent as your answer to messages ${first.id} and ${second.id}.`,
+  )
+})
 it("turns @ultimate's message to the user it owes an answer into that answer and ends the run", async () => {
   const f = await fixture()
   const owe = (text: string) =>
@@ -934,6 +981,30 @@ it('queues a busy recipient as follow-up, or steers its current run; @ultimate s
     const released = f.observed.indexOf('released')
     expect(steer ? released === -1 : released < delivered).toBe(true)
   }
+})
+it('tells the sender its message to a busy recipient is queued, and the recipient that it waits', async () => {
+  // #18345's question sat queued behind #18872's run: #18872 thought it lost and answered it twice.
+  const f = await fixture()
+  await f.opened.harness.commit(async (tx) => {
+    ;(await tx.doc(Standing, ROOT_CONVERSATION_ID)).ultimate = 999 as ConversationId
+  }, context)
+  await f.recipient.submit({ type: 'input', content: 'HOLD' }, context)
+  await until(f.holding)
+  await f.send(`#${f.recipient.id}`, 'Hook?')
+  expect((await f.log())!.messages[0]).toMatchObject({ state: 'sent', queued: 'followUp' })
+  const root = await f.opened.root.viewState(context)
+  expect(JSON.stringify(root.value.entries.findLast((e) => e.kind === 'pi.tool-result'))).toContain(
+    'Message 1 queued as a follow-up',
+  )
+  root.dispose()
+  f.hold.release()
+  await until(async () => (await replies(f)).length === 1)
+  // The note reached the held run's next request, before the question itself.
+  const noted = f.transcripts.findIndex((t) => t.includes('Queued for you: message 1 from #1'))
+  const asked = f.transcripts.findIndex((t) => t.includes('Message from #1:\\nHook?'))
+  expect(noted).toBeGreaterThan(-1)
+  expect(noted).toBeLessThan(asked)
+  expect((await f.log())!.messages[0].queued).toBeUndefined()
 })
 async function codemodeFixture() {
   const home = await temp('ultimate-messages-actions-')
@@ -1483,6 +1554,46 @@ it("does not route an answer to the starter's reply-enabled message", async () =
   await until(async () => (await replies(f)).length === 2)
   await b.settled()
   expect((await b.from()).map((m) => m.re)).toEqual([1, 3])
+})
+it("does not route a branch's answer to a sibling's question to its starter", async () => {
+  // #18872 answered sibling #18345's question; the answer went back to #18345 and, a second time, to @ultimate.
+  const f = await fixture()
+  const b = await branched(f)
+  await (
+    await f.recipient.submit(
+      { type: 'input', content: 'SEND ' + JSON.stringify({ to: `#${b.id}`, text: 'Hook?' }) },
+      context,
+    )
+  ).wait(context)
+  await until(async () => (await b.from()).length === 2)
+  await b.settled()
+  const question = (await f.log())!.messages.find((m) => m.text === 'Hook?')!
+  expect((await b.from()).map((m) => [m.to, m.re])).toEqual([
+    [1, 1],
+    [f.recipient.id, question.id],
+  ])
+})
+it('still wakes the starter when a sibling question queued behind the last work run ends it', async () => {
+  const f = await fixture()
+  const b = await branched(f)
+  await b.branch.submit({ type: 'input', content: 'HOLD' }, context)
+  await until(f.holding)
+  await (
+    await f.recipient.submit(
+      { type: 'input', content: 'SEND ' + JSON.stringify({ to: `#${b.id}`, text: 'Hook?' }) },
+      context,
+    )
+  ).wait(context)
+  f.hold.release()
+  await until(async () => (await b.from()).some((m) => m.to === f.recipient.id))
+  await b.settled()
+  const toStarter = (await b.from()).filter((m) => m.to === 1).slice(1)
+  // However the two runs' routes interleave, the starter ends with one report, and never the answer to the sibling.
+  expect(toStarter.filter((m) => m.report)).toHaveLength(1)
+  expect(toStarter.at(-1)?.report).toBe(true)
+  expect(toStarter.some((m) => m.text.startsWith(`Answer: Message from #${f.recipient.id}`))).toBe(
+    false,
+  )
 })
 it("routes an answer to the starter's one-way message, waking it for a decision without a loop", async () => {
   const f = await fixture()

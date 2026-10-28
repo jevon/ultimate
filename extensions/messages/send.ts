@@ -1,6 +1,6 @@
 /** `send()`: validating, admitting and logging a message, and starting its delivery. */
 import type { Context } from '@earendil-works/chord'
-import { defineDoc, ROOT_CONVERSATION_ID } from '@earendil-works/pi-durable'
+import { defineDoc, LiveDoc, ROOT_CONVERSATION_ID } from '@earendil-works/pi-durable'
 import type { ConversationId, TaskId } from '@earendil-works/pi-durable'
 import type { ExtensionHost } from '../../server/extensions.ts'
 import { Standing } from '../subagents/api.ts'
@@ -126,27 +126,29 @@ export async function send(
       for (const m of (await tx.doc(Messages, ROOT_CONVERSATION_ID)).messages)
         if (openQuestion(m) && m.id === input.re) m.state = input.dismiss ? 'dismissed' : 'answered'
     let re = input.re
+    let also: number[] | undefined
     if (from !== 'user' && input.reply !== false) {
       const log = await tx.doc(Messages, ROOT_CONVERSATION_ID)
-      // Only a message the agent has read is owed; one still queued is unread and gets its own turn.
-      const pending = log.messages.find(
+      // Only a message the agent has read is owed; one still queued is unread and gets its own turn. It answers every
+      // owed one: their deliveries, seeing them answered, send no reply of their own.
+      const owed = log.messages.filter(
         (m) => m.to === from && m.from === to && m.reply && m.state === 'delivered',
       )
+      for (const m of owed) m.state = 'answered'
+      const [pending] = owed
+      if (owed.length > 1) also = owed.slice(1).map((m) => m.id)
       // A message to the user who is owed an answer is that answer, with its questions and images.
-      if (pending && to === 'user') {
-        pending.state = 'answered'
-        re = pending.id
-      }
+      if (pending && to === 'user') re = pending.id
       // An agent messaging a sender whose message it has read and owes an answer is answering: this becomes the reply,
       // and that message's delivery, seeing it answered, keeps the final answer local.
       else if (pending) {
-        pending.state = 'answered'
         const response = await append(tx, {
           from,
           to,
           text: input.text,
           reply: false,
           re: pending.id,
+          ...(also ? { also } : {}),
           state: 'sent',
           ...(callId === undefined ? {} : { call: callId }),
           ...(images ? { images } : {}),
@@ -172,13 +174,19 @@ export async function send(
         return response.id
       }
     }
+    const note = options.note ?? (starter === to && input.reply === false)
+    // A busy recipient queues it, so the sender can see it waits rather than think it lost; delivery clears it once placed.
+    const busy =
+      typeof to === 'number' && !note && (await tx.doc(LiveDoc, to as ConversationId)).run
     const message = await append(tx, {
       from,
       to,
       text: input.text,
       reply: input.reply ?? true,
       state: to === 'user' ? 'delivered' : 'sent',
+      ...(busy ? { queued: steer ? ('steer' as const) : ('followUp' as const) } : {}),
       ...(re === undefined ? {} : { re }),
+      ...(also ? { also } : {}),
       ...(callId === undefined ? {} : { call: callId }),
       ...(images ? { images } : {}),
       ...(questions ? { questions } : {}),
@@ -206,7 +214,7 @@ export async function send(
         {
           message,
           steer,
-          note: options.note ?? (starter === to && input.reply === false),
+          note,
           fromLabel,
           toLabel,
         },

@@ -49,6 +49,8 @@ export type Message = {
   at: number
   reply: boolean
   re?: number
+  /** A reply that answers several open messages at once: the others it answers, after `re`. */
+  also?: number[]
   state: 'sent' | 'delivered' | 'answered' | 'dismissed' | 'failed' | 'stopped'
   entry?: number
   answer?: number
@@ -59,6 +61,8 @@ export type Message = {
   images?: { entry: number; count: number }
   /** A branch's final answer routed to its starter after it stopped with nothing under way: it awaits the starter. */
   report?: true
+  /** Sent to a busy recipient: waiting in its queue to steer its run or as a follow-up after it; cleared once placed. */
+  queued?: 'steer' | 'followUp'
   /** The other project's Ultimate a `remote` side names. */
   remote?: Remote
   /** The questions a reply-expected message to the user asks, answered on its card. */
