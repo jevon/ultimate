@@ -8,17 +8,31 @@ import { defineExtension, defineTool, section } from '@earendil-works/pi-durable
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core'
 import type { ExtensionHost } from '../../server/extensions.ts'
 
+/** Chromium executables Playwright may have installed under `home` for `platform`, newest first. */
+export async function playwrightChromiums(
+  home: string,
+  platform = process.platform,
+  arch = process.arch,
+) {
+  const [cache, executable] =
+    platform === 'darwin'
+      ? [
+          join(home, 'Library/Caches/ms-playwright'),
+          `chrome-mac-${arch}/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
+        ]
+      : [join(home, '.cache/ms-playwright'), 'chrome-linux64/chrome']
+  return (await readdir(cache).catch(() => []))
+    .filter((name) => name.startsWith('chromium-'))
+    .toSorted((a, b) => b.localeCompare(a, 'en', { numeric: true }))
+    .map((name) => join(cache, name, executable))
+}
+
 export async function browserBinary() {
-  const cache = join(homedir(), '.cache/ms-playwright')
   const candidates = [
     process.env.ULTIMATE_CHROMIUM,
     '/usr/bin/chromium',
     '/usr/bin/google-chrome-stable',
-    ...(await readdir(cache).catch(() => []))
-      .filter((name) => name.startsWith('chromium-'))
-      .toSorted()
-      .toReversed()
-      .map((name) => join(cache, name, 'chrome-linux64/chrome')),
+    ...(await playwrightChromiums(homedir())),
   ].filter((path): path is string => !!path)
   for (const path of candidates) {
     try {
@@ -29,7 +43,7 @@ export async function browserBinary() {
     }
   }
   throw new Error(
-    'No Chromium found. Set ULTIMATE_CHROMIUM or install /usr/bin/chromium, /usr/bin/google-chrome-stable, or ~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome.',
+    'No Chromium found. Set ULTIMATE_CHROMIUM, install /usr/bin/chromium or /usr/bin/google-chrome-stable, or run `npx playwright install chromium` (~/.cache/ms-playwright on Linux, ~/Library/Caches/ms-playwright on macOS).',
   )
 }
 
