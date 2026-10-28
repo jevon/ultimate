@@ -90,10 +90,13 @@ document, tools and model-facing text, where agents and stored entries already u
   with `tool_search`. Tool `memory {read?, root?}`, offered to every agent, returns the index, one
   `slug [kind] — line (updated YYYY-MM-DD)` per memory, or with `read` one memory's body and source. User-only
   `forget {root, slug}` (`ForgetAction`) deletes one through the same path, as does `LineageApi.remember` for other
-  extensions. The **Memory** panel (`MEMORY_PANEL` in `ui.tsx`, which the sidebar's Memory row opens) shows every
-  root's memory grouped into Decisions, Facts and Lessons, newest first: slug, line and age per row; a row expands to
-  its Markdown body and source chip, and a trash icon (always visible on touch) calls `forget` (the brief's size is on
-  the sidebar row); `ui.tsx` also re-exports `MemoryDoc` for the sidebar's counts.
+  extensions. The **Memory** surface (`MEMORY_SURFACE` in `ui.tsx`, the sidebar beside a centred reading column;
+  the sidebar's Memory row opens it) shows every root's memory grouped into Decisions, Facts and Lessons, newest
+  first, under the `MemoryHeader` point (dream's Dream button), the count and brief size, and a filter over slug, line
+  and body: slug, line (two lines folded) and age per row; a row expands to its Markdown body and source chip, and a
+  trash icon (always visible on touch) calls `forget`. `useOpenMemory(slug?)` and `MemoryChip` (recall and remember
+  chips) open the surface on a memory, unfolded and scrolled into view (`MEMORY_FOCUS`); `ui.tsx` also re-exports
+  `MemoryDoc` for the sidebar's counts.
   **Brief**: a branch forked from a root that has memories does not start from the tally. Its fork gets a
   `pi.reset` (`head: 'self'`, `data.lineage.brief: {tally}`, the root tip it covers) right after the fork point,
   before its prompt, whose model text is `<project_memory root="#R">` with the index, the root's last 10 landings (`<sha7> <feature: title> (#conv)`) and
@@ -200,9 +203,11 @@ A branch is the conversation; the coordinator is the agent that runs it, so the 
 There is no manual creation page or message-hover branch action. Coordinator branches keep their composers for steering.
 
 A root is the project's read-only History page. Through the SDK's `composer` renderer, every listed root replaces
-its composer with one banner, "You're reading the project's history", and **Back to @ultimate** (`talkToUltimate`,
-like mod+0). There is no text input, memory list or compact button on the page: memory lives in the sidebar's Memory
-row and the Memory panel, and the palette's Compact on a root runs lineage `compact` while its composer-focus command
+its composer with one banner, "You're reading the project's history", with **Open in Zed** (lineage `openEditor`, user-only: the
+project folder in `zeditor` or `zed` on the machine Ultimate runs on; hidden on touch devices) and a small GitHub link
+when `origin` is there, and **Back to @ultimate** (`talkToUltimate`, like mod+0). The sidebar's project
+path opens it. There is no text input, memory list or compact button on the page: memory lives in the sidebar's Memory
+row and the Memory surface, and the palette's Compact on a root runs lineage `compact` while its composer-focus command
 is hidden. A new project starts in @ultimate's conversation instead, from onboarding's Start here card.
 @ultimate maintains standing decisions in memory with `remember` and the memory review. A root's transcript shows no
 summary or assessment lines.

@@ -11,9 +11,9 @@ A project is a forest of conversation trees, like commit histories.
 - **Roots** run no turns. Each keeps a project memory (decisions, facts, lessons by slug); a branch starts from the
   root's memory index and recent landings. The root's read-only tally stays the browsable project context: branch
   intents, latest conversation abstracts and landings with divergence and `#conversation/entry` breadcrumbs. The UI
-  calls a tally **context** and shows it as the read-only **History** page, whose only control is **Back to
+  calls a tally **context** and shows it as the read-only **History** page (the sidebar's project path opens it), with **Open in Zed** and **Back to
   @ultimate**; the sidebar's Memory row shows the memory's estimated tokens (what a branch starts from) and opens the
-  Memory panel, and each root heads its tree with its last three events (landings, notes, branches, compactions).
+  Memory surface, and each root heads its tree with its last three events (landings, notes, branches, compactions).
   Start a project with @ultimate: Continue on Get ready, or **Set up with @ultimate** on the Start here card that
   @ultimate's conversation shows until onboarding has run. It walks the user through Ultimate, handles setup
   cards, reads the project and writes its first memories with `remember`; the user's answer about the project

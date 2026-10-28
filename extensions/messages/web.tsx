@@ -24,6 +24,7 @@ import {
   backgroundRow,
   emptyMessages,
   scriptMessaged,
+  threadRow,
   ultimateCompact,
 } from './data.tsx'
 import { callerOf } from './caller.ts'
@@ -106,6 +107,8 @@ export default defineWebExtension({
     // Traffic between agents is background to your conversation with @ultimate: each stretch of it folds into one line.
     quiet: (row, docs) => backgroundRow(row, docs.board as MessagesData | null | undefined),
     summary: BackgroundSummary,
+    // Your inputs and @ultimate's messages to you are what you read; everything between recedes.
+    thread: (row, docs) => threadRow(row, docs.board as MessagesData | null | undefined),
   },
   answerLabels: [MessageAnswerLabel],
   // The `branch` tool labels the coordinator branches it starts; the title bar names their kind before the agent.

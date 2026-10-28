@@ -192,6 +192,42 @@ export function backgroundRow(
   return answered.length > 0 && answered.every((m) => m.reply && m.from !== 'user')
 }
 
+/**
+ * Whether a row of @ultimate's compact transcript is the conversation itself, what the user reads: their inputs, @ultimate's
+ * messages and answers to them, and setup cards they act on. Everything between two such rows recedes.
+ */
+export function threadRow(
+  row: { entry: EntryRecord; calls: readonly { id: string; name: string; arguments: unknown }[] },
+  log: Readonly<MessagesData> | null | undefined,
+): boolean {
+  const { entry, calls } = row
+  if (entry.kind === 'pi.user') return true
+  if (entry.kind === 'board.message' || entry.kind === 'board.reply')
+    return (entry.data as { from?: unknown } | undefined)?.from === 'user'
+  if (entry.kind !== 'pi.assistant' || backgroundRow(row, log) !== false) return false
+  if (calls.length)
+    return calls.some(
+      (call) =>
+        call.name === 'setup' ||
+        scriptMessaged(call, log) ||
+        (call.name === 'message' &&
+          (call.arguments as { to?: unknown } | undefined)?.to === 'user'),
+    )
+  // An answer, or a run that failed: both are for the user to read.
+  const message = entry.model?.[0]
+  return (
+    message?.role === 'assistant' &&
+    (message.stopReason === 'stop' || message.stopReason === 'error')
+  )
+}
+
+/** The short commit a landing row says landed, for a summary line. */
+export function landedSha(entry: EntryRecord): string | undefined {
+  const data = entry.data as { sha?: unknown; outcome?: { sha?: unknown } } | undefined
+  const sha = entry.kind === 'lineage.note' ? data?.sha : data?.outcome?.sha
+  return typeof sha === 'string' ? sha.slice(0, 7) : undefined
+}
+
 const idOf = (value: unknown): (number | 'remote')[] =>
   typeof value === 'number' || value === 'remote' ? [value] : []
 
@@ -199,7 +235,7 @@ const idOf = (value: unknown): (number | 'remote')[] =>
  * Whether an entry says work landed: the lander's landing note, or its report of a landing. Landings are news you wait
  * for, so they stay in the compact transcript and split background around them; a failed report stays background.
  */
-function landed(entry: EntryRecord) {
+export function landed(entry: EntryRecord) {
   const data = entry.data as { source?: unknown; outcome?: { outcome?: unknown } } | undefined
   if (entry.kind === 'lineage.note') return data?.source === 'lander'
   return entry.kind === 'workspaces.lander-report' && data?.outcome?.outcome === 'landed'

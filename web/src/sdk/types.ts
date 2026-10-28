@@ -205,6 +205,11 @@ export interface CompactContribution {
   quiet?: CompactQuietTest
   /** The line a folded group of quiet rows shows; the first matching facet's wins, a step count otherwise. */
   summary?: ComponentType<CompactSummaryProps>
+  /**
+   * Rows that are the conversation the reader follows, such as @ultimate's messages to the user: everything between two of
+   * them recedes into one faded stretch.
+   */
+  thread?: (row: CompactRow, docs: CompactDocs) => boolean
 }
 /** A compact transcript row: an entry, and the visible tool calls it shows when it shows only some of its blocks. */
 export interface CompactRow {
@@ -220,6 +225,8 @@ export interface CompactSummaryProps {
   steps: number
   /** Whether the agent still works in it. */
   working: boolean
+  /** Whether it sums up a whole stretch between thread rows (`thread`), landings and notes included, not one quiet group. */
+  between?: boolean
 }
 /** The root conversation's documents of the contributions' `docs` kinds, by kind, as `useDocOf(1, kind)` reads them. */
 export type CompactDocs = Readonly<Record<string, Readonly<JsonObject> | null | undefined>>

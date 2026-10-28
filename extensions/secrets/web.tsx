@@ -65,7 +65,7 @@ function useSecrets() {
 }
 
 const missing = (secrets: readonly Secret[] | undefined) =>
-  secrets?.filter((secret) => !secret.set && secret.declaredBy.length > 0) ?? []
+  secrets?.filter((secret) => !secret.set && !secret.via && secret.declaredBy.length > 0) ?? []
 
 const dot = (tone: string) => <span className={cn('size-1.5 shrink-0 rounded-full', tone)} />
 const small = 'h-7 gap-1.5 px-2 font-mono text-[11.5px]'
@@ -269,6 +269,11 @@ function Row({
             {secret.updatedAt
               ? `set · ${formatAgo(Date.parse(secret.updatedAt), now, { ago: true })}`
               : 'set'}
+          </span>
+        ) : secret.via ? (
+          <span className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+            {dot('bg-success')}
+            via {secret.via}
           </span>
         ) : (
           <span className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] text-warning">

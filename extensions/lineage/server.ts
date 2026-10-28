@@ -40,7 +40,8 @@ import type { LandedData } from '../workspaces/api.ts'
 import { Branch, Branched, LineageApi, Rooted, Roots } from './api.ts'
 import { ConversationsApi, Trees } from '../conversations/api.ts'
 import { Standing, Started } from '../subagents/api.ts'
-import { CompactAction, ForgetAction, RecentAction, TallyDoc } from './refs.ts'
+import { spawn } from 'node:child_process'
+import { CompactAction, ForgetAction, OpenEditorAction, RecentAction, TallyDoc } from './refs.ts'
 import {
   applyMemoryOps,
   Memorized,
@@ -95,7 +96,18 @@ export const Tally = defineDoc<TallyState>({
 
 export const docs = [Roots, Branch, Tally, Seen, Memory]
 /** Going back sets a conversation's path aside, and forgetting drops a memory: only the user decides those. */
-export const userActions = ['rewind', 'forget', 'compact']
+export const userActions = ['rewind', 'forget', 'compact', 'openEditor']
+
+/** Starts `editor` on `folder`, detached, once it has spawned; rejects when it is not on PATH. */
+const launch = (editor: string, folder: string) =>
+  new Promise<void>((resolve, reject) => {
+    const child = spawn(editor, [folder], { detached: true, stdio: 'ignore' })
+    child.once('error', reject)
+    child.once('spawn', () => {
+      child.unref()
+      resolve()
+    })
+  })
 
 const ASK_TOKENS = 8192
 
@@ -1195,6 +1207,18 @@ export const actions = {
     }, context)
     return { roots }
   },
+  /** Open the project folder in Zed on this machine: `zeditor` (Arch's name), else `zed`. User-only. */
+  openEditor: implementAction(OpenEditorAction, async (_args, { host }) => {
+    for (const editor of ['zeditor', 'zed'])
+      try {
+        await launch(editor, host.projectRoot)
+        return { editor }
+      } catch (error) {
+        // Not on PATH: try the next name; anything else is a real failure.
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    throw new Error('Zed is not installed on this machine (no zeditor or zed on PATH)')
+  }),
   /** `{root, slug}`: delete one memory of root `root`. User-only. */
   forget: implementAction(ForgetAction, async (args, { host }) => {
     const { root, slug } = (args ?? {}) as { root?: unknown; slug?: unknown }

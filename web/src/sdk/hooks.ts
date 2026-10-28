@@ -319,7 +319,11 @@ export function useCompactQuiet() {
   const { compact, docs } = useCompactConfig()
   return useMemo(
     () =>
-      compact && { quiet: (row: CompactRow) => compact.quiet(row, docs), summary: compact.summary },
+      compact && {
+        quiet: (row: CompactRow) => compact.quiet(row, docs),
+        summary: compact.summary,
+        thread: compact.thread && ((row: CompactRow) => compact.thread!(row, docs)),
+      },
     [compact, docs],
   )
 }
