@@ -928,8 +928,9 @@ Keep in mind:
 
 `@/sdk/*` deep imports are core internals, not extension API. Import only from `@/sdk`, `@/components/ui/*`, `@/components/ai/*`, `@/components/json-tree`, `react`, and `lucide-react`. Never call `fetch` or
 open an `EventSource` yourself (`ultimate/no-raw-stream` fails lint on it in `extensions/**/*.tsx`): the SDK keeps one
-live stream for the shown conversation plus one for each conversation whose documents are watched with `useDocOf`
-(the shown one included), replays their changes, and your server code is reached through [actions](#actions). The surface primitives are in [Surfaces](#primitives).
+live stream per tab, carrying a subscription for the shown conversation plus one for each conversation whose documents
+are watched with `useDocOf` (the shown one included), replays their changes, and your server code is reached through
+[actions](#actions). Browsers allow about six connections per host, so every further stream would hold back requests. The surface primitives are in [Surfaces](#primitives).
 
 | Hook                                                                      | Returns                                                                                                                                                                                                                  |
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
