@@ -318,6 +318,11 @@ export default function prompt(host: ExtensionHost) {
                 '- IMPORTANT: never use bash to read or change files when a dedicated tool does it. Read with read, not cat, head, tail or sed -n. Change files with edit, not sed -i, perl, awk or a python or node script. Create files with write, not a heredoc, echo or printf redirect. The person reviews your work through these tools: edit and write show each change as a diff, a script in bash hides it, and edit refuses text that does not match exactly once where a script silently changes nothing. A rename across a few files is one edit call per file. Only output a program generates (formatters, codegen, package managers) or a mechanical change across many files goes through bash.',
               ]
             : []),
+          ...(names.has('bash') && names.has('read')
+            ? [
+                '- Tool calls in the same round run at once: never read a file that a bash call in that round writes; read it in the next round.',
+              ]
+            : []),
           '- You talk to the person through a web UI that renders Markdown: short paragraphs, lists, fenced code with a language, and file paths in backticks.',
         ].join('\n')
       }),
