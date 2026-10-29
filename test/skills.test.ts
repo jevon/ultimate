@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { ProjectTrustStore } from '@earendil-works/pi-coding-agent'
 import { afterEach, expect, it } from 'vitest'
@@ -67,6 +67,27 @@ it('loads every scope, lets later scopes override and keeps Pi diagnostics', asy
       path: join(host.projectRoot, '.ultimate/skills/broken/SKILL.md'),
     },
   ])
+})
+
+it('lists a skill behind a symlinked .ultimate/skills by its real path in the work checkout', async () => {
+  home = await temp()
+  const host = {
+    ultimateRoot: join(home, 'clone'),
+    projectRoot: join(home, 'project'),
+    userHome: join(home, 'user'),
+  }
+  const worktree = join(home, 'worktree')
+  const file = '.agents/skills/shots/SKILL.md'
+  await skill(join(host.projectRoot, file), 'name: shots\ndescription: Screenshots')
+  await mkdir(join(host.projectRoot, '.ultimate'))
+  await symlink('../.agents/skills', join(host.projectRoot, '.ultimate/skills'))
+  // The work checkout has the tracked `.agents/skills`, not the git-ignored `.ultimate/`.
+  await skill(join(worktree, file), 'name: shots\ndescription: Screenshots')
+  new ProjectTrustStore(join(host.userHome, '.ultimate')).set(host.projectRoot, true)
+
+  const [shots] = projectSkills(host, worktree).skills
+  expect(shots).toMatchObject({ filePath: join(worktree, file), overrides: [] })
+  expect(projectSkills(host).skills[0]?.filePath).toBe(join(host.projectRoot, file))
 })
 
 it('expands /skill:name args as Pi does and leaves anything else alone', async () => {

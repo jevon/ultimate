@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, realpath } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { formatSkillsForPrompt, loadProjectContextFiles } from '@earendil-works/pi-coding-agent'
 import {
@@ -207,6 +207,46 @@ export function instructionNote(changes: { instructions: string[]; docs: string[
     .join('\n')
 }
 
+/**
+ * One line for a project that git-ignores `.ultimate/`: nothing built there is committed. Names the tracked folders its
+ * symlinks resolve to (`.ultimate/skills` → `.agents/skills`), in the work checkout.
+ */
+export async function ignoredConfigNote(projectRoot: string, cwd: string) {
+  const config = join(projectRoot, '.ultimate')
+  const entries = await readdir(config, { withFileTypes: true }).catch(
+    // No `.ultimate/` here: nothing to warn about.
+    () => [],
+  )
+  const project = await realpath(projectRoot)
+  const links = (
+    await Promise.all(
+      entries
+        .filter((entry) => entry.isSymbolicLink())
+        .map(async (entry) => {
+          const real = await realpath(join(config, entry.name)).catch(
+            // A dangling link leads nowhere to commit to.
+            () => undefined,
+          )
+          const target = real && relative(project, real)
+          return !target || target.startsWith('..')
+            ? []
+            : [[`.ultimate/${entry.name}`, target] as const]
+        }),
+    )
+  ).flat()
+  const ignored = await git(projectRoot, 'check-ignore', '.ultimate', ...links.map(([, to]) => to))
+    .then((out) => out.split('\n'))
+    .catch(
+      // Exit 1 means nothing is ignored; outside Git nothing is committed anyway.
+      (): string[] => [],
+    )
+  if (!ignored.includes('.ultimate')) return undefined
+  const tracked = links.filter(([, to]) => !ignored.includes(to))
+  return tracked.length
+    ? `This project git-ignores .ultimate/, so nothing there is committed; commit to the tracked folders it links to: ${tracked.map(([from, to]) => `${from} → ${join(cwd, to)}/`).join(', ')}.`
+    : 'This project git-ignores .ultimate/, so nothing there is committed: it stays on this machine.'
+}
+
 export default function prompt(host: ExtensionHost) {
   return defineExtension({
     name: 'prompt',
@@ -261,11 +301,11 @@ export default function prompt(host: ExtensionHost) {
       }),
     ],
     sections: [
-      section(
-        'identity',
-        (input) =>
-          `You are Ultimate, a coding agent running in a web UI on the user's machine. The person in this conversation steers; you build, verify, and report. You are meant to be specialized for the project: build the tools, panels, agents, and skills that help with it into ${input.env?.cwd ?? input.agent.cwd ?? host.projectRoot}/.ultimate/ so everyone working on the project gets them, and personal ones into ~/.ultimate/.`,
-      ),
+      section('identity', async (input) => {
+        const cwd = input.env?.cwd ?? input.agent.cwd ?? host.projectRoot
+        const ignored = await ignoredConfigNote(host.projectRoot, cwd)
+        return `You are Ultimate, a coding agent running in a web UI on the user's machine. The person in this conversation steers; you build, verify, and report. You are meant to be specialized for the project: build the tools, panels, agents, and skills that help with it into ${cwd}/.ultimate/ so everyone working on the project gets them, and personal ones into ~/.ultimate/.${ignored ? `\n${ignored}` : ''}`
+      }),
       section(
         'principles',
         () => `- Read what kind of request it is. A question, or "how could we…", asks you to explore: investigate, then come back with one proposal that includes what the person may not have thought of (a risk, a simpler path, a case it also touches), and wait for their go before changing anything. A clear instruction ("do this", "fix that"), a delegated task or a scheduled run is the go, unless it asks for an assessment first: do it, verify, and report, asking only about decisions that change behaviour or scope. When you need a decision from the person, end with the questions and numbered options.

@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { dirname, isAbsolute, join, relative } from 'node:path'
 import { useProjectSetup } from './project-setup.ts'
 import { loadSkills, stripFrontmatter } from '@earendil-works/pi-coding-agent'
 import type { Skill } from '@earendil-works/pi-coding-agent'
@@ -34,20 +34,32 @@ export function projectSkills(
       : []),
   ]
   const agentDir = join(host.userHome, '.ultimate')
+  // A project skill behind a symlink (`.ultimate/skills` → `.agents/skills`) is listed by its real path in the repo,
+  // inside `cwd` when the work checkout has it: a git-ignored `.ultimate/` is not there.
+  const project = realpathSync(host.projectRoot)
+  const located = (skill: Skill): Skill => {
+    const path = relative(project, realpathSync(skill.filePath))
+    if (path.startsWith('..') || isAbsolute(path)) return skill
+    const inCwd = join(cwd, path)
+    const filePath = existsSync(inCwd) ? inCwd : join(host.projectRoot, path)
+    return { ...skill, filePath, baseDir: dirname(filePath) }
+  }
   const byName = new Map<string, ScopedSkill>()
   const diagnostics = []
   // Most folders don't exist; Pi warns about each missing one, which says nothing here.
   for (const [path, scope] of layers.filter(([folder]) => existsSync(folder))) {
     const loaded = loadSkills({ cwd, agentDir, skillPaths: [path], includeDefaults: false })
     diagnostics.push(...loaded.diagnostics)
-    for (const skill of loaded.skills) {
+    for (const skill of loaded.skills.map(located)) {
       const earlier = byName.get(skill.name)
+      // Both of a symlinked pair load the same file: it overrides nothing.
+      const overridden = earlier && earlier.filePath !== skill.filePath ? [earlier.filePath] : []
       // Map order is first insertion: delete so the winner lists where its own scope puts it.
       byName.delete(skill.name)
       byName.set(skill.name, {
         ...skill,
         scope,
-        overrides: earlier ? [...earlier.overrides, earlier.filePath] : [],
+        overrides: [...(earlier?.overrides ?? []), ...overridden],
       })
     }
   }
