@@ -10,11 +10,11 @@ export type Message = {
   questions?: Question[]
 }
 
-/** Whether a message to the user still waits on their answer or dismissal. */
+/** Whether a message to the user still waits on their answer or dismissal, and its sender has not withdrawn it. */
 export const waitsOnUser = (message: Message) =>
   message.to === 'user' && message.reply && message.state === 'delivered'
 
-/** The questions of a message while it still waits on the user's reply; none once it is answered or dismissed. */
+/** The questions of a message while it still waits on the user's reply; none once it is answered, dismissed or withdrawn. */
 export function openQuestions(message: Message) {
   return waitsOnUser(message) ? (message.questions ?? []) : []
 }

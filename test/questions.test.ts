@@ -13,6 +13,8 @@ import messagesExtension, { gist } from '../extensions/messages/server.ts'
 import { Messages } from '../extensions/messages/api.ts'
 import type { Question } from '../extensions/messages/api.ts'
 import { checkQuestions } from '../extensions/messages/questions.ts'
+import { append } from '../extensions/messages/log.ts'
+import { send } from '../extensions/messages/send.ts'
 import questionsExtension, {
   actions,
   answerText,
@@ -152,7 +154,7 @@ async function fixture() {
   const action = () => ({ host, signal: new AbortController().signal }) as ActionContext
   const answer = (args: Parameters<typeof actions.answer>[0]) => actions.answer(args, action())
   const dismiss = (messageId: number) => actions.dismiss({ messageId }, action())
-  return { opened, ultimate, type, ask, answer, dismiss, log, entries, observed, settled }
+  return { host, opened, ultimate, type, ask, answer, dismiss, log, entries, observed, settled }
 }
 
 describe('questions on a message', () => {
@@ -373,6 +375,96 @@ describe('questions on a message', () => {
     await expect(f.answer({ messageId: first.id, text: 'Yes' })).rejects.toThrow(
       'These questions are no longer open',
     )
+  })
+
+  it('withdraws its own superseded card with the newer one, refusing cards not its own or no longer open', async () => {
+    const f = await fixture()
+    const id = await f.ultimate()
+    const first = (await f.ask(id, { text: 'Scope?', questions: [decisions[0]] })).message!
+    const revised = await f.ask(id, {
+      text: 'Scope, revised.',
+      questions: [decisions[0], decisions[2]],
+      withdraw: [first.id],
+    })
+    expect(revised.error).toBeUndefined()
+    expect((await f.log()).messages.find((m) => m.id === first.id)?.state).toBe('withdrawn')
+    expect(revised.message).toMatchObject({
+      state: 'delivered',
+      questions: [decisions[0], decisions[2]],
+    })
+    await f.type(id, 'Anything new?')
+    expect((await f.entries(id)).findLast((entry) => entry.kind === 'board.open')?.data).toEqual({
+      ids: [revised.message!.id],
+    })
+    await expect(f.answer({ messageId: first.id, text: 'all of it' })).rejects.toThrow(
+      'These questions are no longer open',
+    )
+    await expect(f.dismiss(first.id)).rejects.toThrow('These questions are no longer open')
+
+    // Another conversation's card, and closed ones: refused, and nothing is sent.
+    const other = await f.opened.harness.createConversation(
+      { ownership: { kind: 'ownerless' } },
+      context,
+    )
+    const foreign = await f.opened.harness.commit(
+      async (tx) =>
+        (
+          await append(tx, {
+            from: other.id,
+            to: 'user',
+            text: 'Mine?',
+            reply: true,
+            state: 'delivered',
+          })
+        ).id,
+      context,
+    )
+    const dismissed = (await f.ask(id, { text: 'Layout?' })).message!
+    await f.dismiss(dismissed.id)
+    await f.answer({ messageId: revised.message!.id, text: 'all of it, yes' })
+    await f.settled()
+    const sent = (await f.log()).messages.length
+    const refused = async (withdraw: number[], reason: string, to = 'user') =>
+      expect((await f.ask(id, { to, text: 'Again.', withdraw })).error).toContain(reason)
+    await refused([foreign], `message ${foreign} is not your message to the user`)
+    await refused([first.id], `message ${first.id} is no longer open (withdrawn)`)
+    await refused([revised.message!.id], 'is no longer open (answered)')
+    await refused([dismissed.id], 'is no longer open (dismissed)')
+    await refused([dismissed.id], 'withdraw goes only with a message to the user', `#${other.id}`)
+    expect((await f.log()).messages).toHaveLength(sent)
+    expect((await f.log()).messages.find((m) => m.id === foreign)?.state).toBe('delivered')
+  })
+
+  it('settles a late answer racing a withdraw on one outcome', async () => {
+    const f = await fixture()
+    const id = await f.ultimate()
+    const { message } = await f.ask(id, { text: 'Scope?', questions: [decisions[0]] })
+    const results = await Promise.allSettled([
+      f.answer({ messageId: message!.id, answers: [{ question: 'Scope', answer: 'all of it' }] }),
+      send(
+        f.host,
+        id,
+        { to: 'user', text: 'Never mind.', reply: false, withdraw: [message!.id] },
+        context,
+      ),
+    ])
+    const refused = results.flatMap((result, index) =>
+      result.status === 'rejected' ? [[index ? 'withdraw' : 'answer', String(result.reason)]] : [],
+    )
+    expect(refused).toHaveLength(1)
+    expect(refused[0][1]).toMatch(/no longer open/)
+    await f.settled()
+    const log = (await f.log()).messages
+    // The winner's outcome only: answered with one reply and no note, or withdrawn with the note and no reply.
+    expect([
+      ['answered', 1, 0, 'withdraw'],
+      ['withdrawn', 0, 1, 'answer'],
+    ]).toContainEqual([
+      log.find((m) => m.id === message!.id)?.state,
+      log.filter((m) => m.re === message!.id).length,
+      log.filter((m) => m.text === 'Never mind.').length,
+      refused[0][0],
+    ])
   })
 })
 

@@ -99,7 +99,10 @@ A reply-enabled message to `user` stays open, and its sender shows as awaiting r
 message: a user Reply with `re` (an answer card, or a typed Reply) marks only that message answered, in the reply's
 commit. Plain input, new posts and answers to other questions leave it open. The service's `dismiss` closes it as
 `dismissed` instead, with a one-way user note to the sender (`re`, delivered as a note: no run starts) in the same
-commit.
+commit. The sender closes its own as `withdrawn`: a `message` to `user` with `withdraw: [id, …]` (a newer card that
+supersedes them, or a one-way note saying why) marks each one in the commit that admits the new message. Each must be
+the sender's own message to the user and still open, or the whole call is refused and nothing is sent; an answer
+racing it is refused by the same check, so exactly one of the two lands.
 
 While the sender has questions open, the input that starts its next run goes in after a `board.open` entry, placed
 by the patched `beforeInput` hook in the input's commit: one user-role line listing each open message's id, first
@@ -214,7 +217,7 @@ type Message = {
   reply: boolean
   re?: number
   also?: number[] // the other messages a reply answers, after re
-  state: 'sent' | 'delivered' | 'answered' | 'dismissed' | 'failed' | 'stopped'
+  state: 'sent' | 'delivered' | 'answered' | 'dismissed' | 'withdrawn' | 'failed' | 'stopped'
   entry?: EntryId
   answer?: EntryId
   error?: string

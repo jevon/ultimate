@@ -198,7 +198,8 @@ export function Bubble({
     (status === 'sending' && !writing) ||
     status === 'failed' ||
     status === 'stopped' ||
-    status === 'dismissed'
+    status === 'dismissed' ||
+    status === 'withdrawn'
   // Prose on the page under a name line; what mounts beneath the text shares one quiet card.
   return (
     <section

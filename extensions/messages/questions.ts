@@ -116,7 +116,7 @@ export function checkQuestions(questions: Question[]): Question[] {
   })
 }
 
-/** A reply-enabled message to the user that the user has neither answered nor dismissed yet. */
+/** A reply-enabled message to the user that is neither answered, dismissed nor withdrawn yet. */
 export const openQuestion = (m: Message) => m.to === 'user' && m.reply && m.state === 'delivered'
 /** A message in one line: its questions by number, else its first line that asks something, else its first line, clipped. */
 export const gist = (message: Pick<Message, 'text' | 'questions'>) => {
@@ -138,7 +138,7 @@ export async function openQuestionsNote(tx: Tx, conversationId: ConversationId, 
     (m) => openQuestion(m) && m.from === conversationId,
   )
   if (!open.length) return undefined
-  const text = `Open questions to the user, unanswered until they answer or dismiss them:\n${open
+  const text = `Open questions to the user, unanswered until they answer or dismiss them or you withdraw them:\n${open
     .map((m) => `- message ${m.id}: ${gist(m)} (asked ${formatAgo(m.at, now, { ago: true })})`)
     .join('\n')}`
   return {

@@ -18,7 +18,7 @@ export function answeredMessages(messages: Message[], conversation: number, entr
 }
 
 export const emptyMessages: MessagesData = { messages: [], next: 1 }
-/** What waits on the user: each question to the user they have neither answered nor dismissed. */
+/** What waits on the user: each question to the user still open (not answered, dismissed or withdrawn). */
 export const waitingOnUser = (log: MessagesData) =>
   log.messages.filter(
     (message) => message.to === 'user' && message.reply && message.state === 'delivered',
@@ -323,6 +323,7 @@ export function messageStatus(message: Message) {
   if (message.state === 'stopped') return 'stopped'
   if (message.state === 'answered') return 'answered'
   if (message.state === 'dismissed') return 'dismissed'
+  if (message.state === 'withdrawn') return 'withdrawn'
   if (isOpen(message)) return message.to === 'user' ? 'yours' : 'waiting'
   if (message.state === 'sent') return 'sending'
   return message.re === undefined ? 'one-way' : 'reply'
@@ -342,6 +343,7 @@ export function outgoingState(message: Message | undefined, toUser: boolean, run
   if (message.state === 'stopped') return 'stopped by the user'
   if (message.state === 'answered') return 'answered'
   if (message.state === 'dismissed') return 'dismissed'
+  if (message.state === 'withdrawn') return 'withdrawn'
   if (message.state === 'sent')
     return message.queued === 'followUp'
       ? 'queued as follow-up'

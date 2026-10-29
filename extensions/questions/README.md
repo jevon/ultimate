@@ -28,8 +28,10 @@ or keys, an option that is "Something else"/"Other" (the card adds it), a scale 
 10 steps, and repeated question texts or refs. Fields that do not apply to a kind are dropped, text is trimmed.
 `questions` goes only with a reply-expected message to `user`.
 
-A question stays open until the user answers it (its card, or a Reply to that message) or dismisses it. Typed input,
-answers to other messages and agent messages leave it open. While it is open, messages starts each of the asker's runs
+A question stays open until the user answers it (its card, or a Reply to that message) or dismisses it, or @ultimate
+withdraws it: a newer `message` to the user with `withdraw: [id]` closes the old card, which then shows `withdrawn` in
+its footer and leaves the To-dos and the open-questions line (see [Messages](../messages/README.md)). Typed input,
+answers to other messages and other agent messages leave it open. While it is open, messages starts each of the asker's runs
 with a line listing it by its questions (see [Messages](../messages/README.md)).
 
 ## Card

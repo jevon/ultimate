@@ -49,6 +49,8 @@ export async function send(
     dismiss?: boolean
     /** With `to: 'user'`, the decisions the message asks, as its answer card shows them. */
     questions?: Question[]
+    /** With `to: 'user'`, the sender's own open messages to the user that this one closes as withdrawn. */
+    withdraw?: number[]
   },
   ctx: Context,
   options: {
@@ -88,6 +90,8 @@ export async function send(
   if (!input.text.trim()) throw new Error('Message text must not be empty')
   if (input.questions !== undefined && (input.to !== 'user' || input.reply === false))
     throw new Error('questions go only with a reply-expected message to the user')
+  if (input.withdraw?.length && input.to !== 'user')
+    throw new Error('withdraw goes only with a message to the user')
   const questions = input.questions === undefined ? undefined : checkQuestions(input.questions)
   // Checked before resolving, which may create a standing agent's conversation.
   const parent = from === 'user' ? undefined : await parentOf(host, from, ctx)
@@ -114,6 +118,17 @@ export async function send(
       )
       if (!original || !openQuestion(original))
         throw new Error('These questions are no longer open')
+    }
+    // In the commit that admits the message, so an answer racing it either lands first and refuses this, or is refused.
+    for (const id of new Set(input.withdraw)) {
+      const asked = (await tx.doc(Messages, ROOT_CONVERSATION_ID)).messages.find((m) => m.id === id)
+      if (!asked || asked.from !== from || asked.to !== 'user')
+        throw new Error(`message ${id} is not your message to the user; nothing was sent`)
+      if (!openQuestion(asked))
+        throw new Error(
+          `message ${id} is no longer open (${asked.reply ? asked.state : 'one-way'}); nothing was sent`,
+        )
+      asked.state = 'withdrawn'
     }
     if (input.images !== undefined && from === 'user')
       throw new Error('your images go along with what you submit, not with a message')
