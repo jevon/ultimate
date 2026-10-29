@@ -423,16 +423,19 @@ describe('questions on a message', () => {
     await f.dismiss(dismissed.id)
     await f.answer({ messageId: revised.message!.id, text: 'all of it, yes' })
     await f.settled()
+    const open = (await f.ask(id, { text: 'Still open?' })).message!
     const sent = (await f.log()).messages.length
     const refused = async (withdraw: number[], reason: string, to = 'user') =>
       expect((await f.ask(id, { to, text: 'Again.', withdraw })).error).toContain(reason)
-    await refused([foreign], `message ${foreign} is not your message to the user`)
+    // One refused id refuses the whole call: the open one before it stays open.
+    await refused([open.id, foreign], `message ${foreign} is not your message to the user`)
     await refused([first.id], `message ${first.id} is no longer open (withdrawn)`)
     await refused([revised.message!.id], 'is no longer open (answered)')
     await refused([dismissed.id], 'is no longer open (dismissed)')
     await refused([dismissed.id], 'withdraw goes only with a message to the user', `#${other.id}`)
     expect((await f.log()).messages).toHaveLength(sent)
-    expect((await f.log()).messages.find((m) => m.id === foreign)?.state).toBe('delivered')
+    for (const kept of [foreign, open.id])
+      expect((await f.log()).messages.find((m) => m.id === kept)?.state).toBe('delivered')
   })
 
   it('settles a late answer racing a withdraw on one outcome', async () => {

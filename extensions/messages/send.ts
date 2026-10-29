@@ -90,7 +90,7 @@ export async function send(
   if (!input.text.trim()) throw new Error('Message text must not be empty')
   if (input.questions !== undefined && (input.to !== 'user' || input.reply === false))
     throw new Error('questions go only with a reply-expected message to the user')
-  if (input.withdraw?.length && input.to !== 'user')
+  if (input.withdraw !== undefined && input.to !== 'user')
     throw new Error('withdraw goes only with a message to the user')
   const questions = input.questions === undefined ? undefined : checkQuestions(input.questions)
   // Checked before resolving, which may create a standing agent's conversation.
@@ -120,8 +120,9 @@ export async function send(
         throw new Error('These questions are no longer open')
     }
     // In the commit that admits the message, so an answer racing it either lands first and refuses this, or is refused.
+    const { messages } = await tx.doc(Messages, ROOT_CONVERSATION_ID)
     for (const id of new Set(input.withdraw)) {
-      const asked = (await tx.doc(Messages, ROOT_CONVERSATION_ID)).messages.find((m) => m.id === id)
+      const asked = messages.find((m) => m.id === id)
       if (!asked || asked.from !== from || asked.to !== 'user')
         throw new Error(`message ${id} is not your message to the user; nothing was sent`)
       if (!openQuestion(asked))
