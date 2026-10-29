@@ -59,6 +59,7 @@ export async function forwarded(tx: Tx, id: EntryId) {
   const entry = await tx.entry(id)
   const total = imagesOf(entry).length
   const content: (TextContent | ImageContent)[] = []
+  let n = 0
   for (const message of entry?.model ?? []) {
     if (
       (message.role !== 'user' && message.role !== 'toolResult') ||
@@ -74,30 +75,39 @@ export async function forwarded(tx: Tx, id: EntryId) {
         content.push(
           {
             type: 'text',
-            text: `Image ${content.length / 2 + 1} of ${total} (entry ${id}, ${source}):`,
+            text: `Image ${++n} of ${total} (entry ${id}, ${source}):`,
           },
           { type: 'image', data: block.data, mimeType: block.mimeType },
         )
   }
   return content
 }
-/** Tool call `toolCallId` as `name key=value …`, from the response before `entry` that made it; else just `name`. */
+/**
+ * Tool call `toolCallId` as `name key=value …`, from the response before `entry` that made it, searched in small pages
+ * (entries carry their images) up to `SCAN_PAGE` entries back; else just `name`.
+ */
 async function call(tx: Tx, entry: EntryRecord, toolCallId: string, name: string) {
-  const before = await tx.scanEntries(
-    { conversationId: entry.conversationId, maxEntryId: (entry.id - 1) as EntryId },
-    SCAN_PAGE,
-  )
-  for (const item of before.items)
-    for (const message of item.model ?? [])
-      if (message.role === 'assistant')
-        for (const block of message.content)
-          if (block.type === 'toolCall' && block.id === toolCallId) {
-            const args = Object.entries(block.arguments).map(
-              ([key, value]) =>
-                `${key}=${clip(typeof value === 'string' ? value : JSON.stringify(value), 80)}`,
-            )
-            return clip([name, ...args].join(' '), 200)
-          }
+  let cursor: Parameters<Tx['scanEntries']>[2]
+  for (let scanned = 0; scanned < SCAN_PAGE; scanned += 10) {
+    const page = await tx.scanEntries(
+      { conversationId: entry.conversationId, maxEntryId: (entry.id - 1) as EntryId },
+      10,
+      cursor,
+    )
+    for (const item of page.items)
+      for (const message of item.model ?? [])
+        if (message.role === 'assistant')
+          for (const block of message.content)
+            if (block.type === 'toolCall' && block.id === toolCallId) {
+              const args = Object.entries(block.arguments).map(
+                ([key, value]) =>
+                  `${key}=${clip(typeof value === 'string' ? value : JSON.stringify(value), 80)}`,
+              )
+              return clip([name, ...args].join(' '), 200)
+            }
+    cursor = page.next
+    if (cursor === undefined) break
+  }
   return name
 }
 /** `text` on one line, at most `max` characters. */
