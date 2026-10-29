@@ -412,6 +412,8 @@ export default host => { host.resource('cleanup.process',()=>{
     const { server } = await fixture()
     server.host.faux!.setResponses([held, fauxAssistantMessage('Complete')])
     await post(server, '/api/conversations/1/submit', { text: 'start' })
+    // The run holds the model only once its prompt is built; aborted before that, `held` would answer `complete`.
+    await until(() => server.host.faux!.state.callCount === 1)
     const run = (await server.harness.snapshot(LiveDoc, server.root.id, context))?.run?.taskId
     expect(run).toBeDefined()
     const queued = await post(server, '/api/conversations/1/submit', {
