@@ -14,7 +14,7 @@ import { Standing, SubagentsApi } from '../subagents/api.ts'
 import { locate, postAction } from '../../lib/remote.ts'
 import { Messages } from './api.ts'
 import type { Message } from './api.ts'
-import { imagesOf } from '../../lib/entries.ts'
+import { forwarded } from './images.ts'
 import { answered, append, terminal } from './log.ts'
 import { remoteLabel } from './addresses.ts'
 import { gist } from './questions.ts'
@@ -54,9 +54,8 @@ export function delivery(host: ExtensionHost) {
         await refresh(m.to, ctx)
         const recipient = await host.harness().conversation(m.to as ConversationId, ctx)
         if (!recipient) throw new Error(`Unknown conversation #${m.to}`)
-        // Entries never change, so a replayed delivery attaches the same images.
         const images = m.images
-          ? imagesOf(await host.harness().commit((tx) => tx.entry(m.images!.entry), ctx))
+          ? await host.harness().commit((tx) => forwarded(tx, m.images!.entry), ctx)
           : []
         const entry = {
           kind: 'board.message',
@@ -66,7 +65,7 @@ export function delivery(host: ExtensionHost) {
             text: m.text,
             reply: m.reply,
             delivery: task.input.note ? 'note' : task.input.steer ? 'steer' : 'followUp',
-            ...(images.length ? { images: images.length } : {}),
+            ...(m.images ? { images: m.images.count } : {}),
             ...(m.remote ? { remote: m.remote } : {}),
           },
         }
@@ -349,9 +348,8 @@ export function delivery(host: ExtensionHost) {
         if (m.to !== 'user') {
           await refresh(m.to, ctx)
           const sender = await runtime.conversation(m.to as ConversationId, ctx)
-          // Entries never change, so a replayed reply attaches the same images.
           const images = m.images
-            ? imagesOf(await host.harness().commit((tx) => tx.entry(m.images!.entry), ctx))
+            ? await host.harness().commit((tx) => forwarded(tx, m.images!.entry), ctx)
             : []
           const entry = {
             kind: 'board.reply',
@@ -363,11 +361,16 @@ export function delivery(host: ExtensionHost) {
               text: m.text,
               failed,
               ...(stopped ? { stopped } : {}),
-              ...(images.length ? { images: images.length } : {}),
+              ...(m.images ? { images: m.images.count } : {}),
               ...(m.remote ? { remote: m.remote } : {}),
             },
           }
-          const body = `Reply from ${task.input.toLabel} to your ${answered(m)}${stopped ? ' (stopped)' : failed ? ' (failed)' : ''}:\n${m.text}`
+          // A question in a reply reaches nobody unless the sender messages back: its final answer stays here.
+          const hint =
+            typeof m.from === 'number'
+              ? `\nThis is a reply: your final answer stays here. To answer #${m.from}, use message.`
+              : ''
+          const body = `Reply from ${task.input.toLabel} to your ${answered(m)}${stopped ? ' (stopped)' : failed ? ' (failed)' : ''}:\n${m.text}${hint}`
           const content = images.length ? [{ type: 'text' as const, text: body }, ...images] : body
           const requestId = `board-reply:${m.id}`
           // A reply that triage, before its removal, wrote as context stands; a short input after it wakes the sender.

@@ -10,7 +10,8 @@ entry with images (a pasted input or a tool result such as a screenshot, searchi
 that entry. The reference resolves when the message is admitted (at most
 `maxImages`, each at most `maxImageBytes`; unknown entries or entries without images are refused); the log records
 `images: { entry, count }`, and delivery attaches that entry's images to the recipient's input, so a replay attaches
-the same ones. `branch` takes the same `images` for its first message. @ultimate's messages to the user carry them
+the same ones. Each image follows a caption, `Image 2 of 3 (entry 812, screenshot url=/x):`, naming the tool call
+whose result holds it (or `an input`), so the recipient can check it is the one the text describes before relaying it. `branch` takes the same `images` for its first message. @ultimate's messages to the user carry them
 too: its bubble shows that entry's images as thumbnails that open full size.
 Address a conversation
 as `#123` or `123`, or a standing agent as `@name`. The lander runs no model and takes no messages.
@@ -31,7 +32,9 @@ and delivery clears the mark when the input leaves the recipient's queue. An age
 that still waits behind a run when its delivery starts also leaves the recipient a `board.queued` note (a write, `board-queued:<id>`, rendering nothing), placed before the input,
 so its run's next request reads `Queued for you: message N from #id, expecting your answer: …` and it neither
 answers early nor takes the question for lost.
-The answer returns as `board.reply`, steering the sender. An unanswered input produces a failure reply instead.
+The answer returns as `board.reply`, steering the sender. A reply from a conversation ends with `This is a reply: your
+final answer stays here. To answer #id, use message.`, since a question asked in a reply reaches nobody otherwise.
+An unanswered input produces a failure reply instead.
 A run that took several reply-enabled messages from one sender (steers at different tool rounds, follow-ups placed
 together) settles them all with its one final answer, and they get one reply: the first delivery to record the answer
 marks every delivered message from that sender whose input settled with the same answer, and appends one reply with

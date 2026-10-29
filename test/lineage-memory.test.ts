@@ -149,9 +149,16 @@ it.concurrent('applies memory ops atomically and holds the cap', async () => {
     [[add('fine'), { op: 'update', slug: 'missing', line: 'x' }], 'no memory missing'],
     [[add('fine'), { op: 'delete', slug: 'missing' }], 'no memory missing'],
     [[add('fine'), add('Bad_Slug')], 'slug must match'],
-    [[add('fine'), add('long', 'x'.repeat(121))], 'at most 120'],
+    // A refused batch named only the op's position, so the agent could not tell which memory to shorten.
+    [
+      [add('fine'), add('long', 'x'.repeat(134))],
+      'Op 2 (slug long): line is 134 characters, at most 120',
+    ],
     [[add('fine'), { ...add('multi'), line: 'one\ntwo' }], 'one non-empty line'],
-    [[add('fine'), { ...add('big'), body: 'x'.repeat(2001) }], 'at most 2000'],
+    [
+      [add('fine'), { ...add('big'), body: 'x'.repeat(2001) }],
+      'Op 2 (slug big): body is 2001 characters, at most 2000',
+    ],
     [[add('fine'), { ...add('odd'), kind: 'opinion' }], 'kind must be'],
   ] as const)
     await expect(apply(server, [...ops])).rejects.toThrow(error)

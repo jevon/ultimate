@@ -583,6 +583,10 @@ it('sends one reply naming every open message a run answered', async () => {
       new RegExp(`^Reply from #${f.recipient.id} to your messages ${first.id} and ${second.id}:`),
     ),
   ])
+  // A branch asked a question in its reply; @ultimate answered in its final answer, which stayed in its conversation.
+  expect(f.observed.find((t) => t.startsWith('Reply from'))).toContain(
+    `\nThis is a reply: your final answer stays here. To answer #${f.recipient.id}, use message.`,
+  )
 })
 it('answers every owed message with one message, failing none', async () => {
   // #10238 answered with a message; it settled one of three owed messages, and the other two came back "failed".
@@ -1305,6 +1309,11 @@ const imagesIn = (entry: { model?: readonly { content: unknown }[] } | undefined
   const content = entry?.model?.[0]?.content
   return Array.isArray(content) ? content.filter((p) => p.type === 'image') : []
 }
+/** The text before each forwarded image. */
+const captionsIn = (entry: { model?: readonly { content: unknown }[] } | undefined) => {
+  const content = entry?.model?.[0]?.content as { type: string; text?: string }[]
+  return content.flatMap((p, i) => (content[i + 1]?.type === 'image' ? [p.text] : []))
+}
 it('forwards images from the sender to a message recipient, by latest or entry id', async () => {
   const f = await fixture()
   const to = `#${f.recipient.id}`
@@ -1315,6 +1324,10 @@ it('forwards images from the sender to a message recipient, by latest or entry i
   const entry = await placed(f, f.recipient.id, first.id)
   expect(entry?.data).toMatchObject({ images: 2 })
   expect(imagesIn(entry)).toEqual([png(0), png(1)])
+  expect(captionsIn(entry)).toEqual([
+    `Image 1 of 2 (entry ${first.images!.entry}, an input):`,
+    `Image 2 of 2 (entry ${first.images!.entry}, an input):`,
+  ])
   // A later input without images: `latest` still finds the one that has them, and an id names it exactly.
   await f.send(to, 'Again', { images: 'latest' })
   await f.send(to, 'By id', { images: first.images!.entry })
@@ -1368,6 +1381,14 @@ it('forwards tool-result images, finds latest past a page, and checks every imag
         (await tx.appendEntry(ROOT_CONVERSATION_ID, { kind: 'test.entry', model } as never)).id,
       context,
     )
+  await write([
+    fauxAssistantMessage(
+      [fauxToolCall('screenshot', { url: '/x', fullPage: true }, { id: 'shot' })],
+      {
+        stopReason: 'toolUse',
+      },
+    ),
+  ])
   const shot = await write(result([png(7)]))
   // More plain entries than one scan page: latest still reaches the screenshot.
   await f.opened.harness.commit(async (tx) => {
@@ -1380,6 +1401,10 @@ it('forwards tool-result images, finds latest past a page, and checks every imag
   const message = (await f.log())!.messages[0]
   expect(message.images).toEqual({ entry: shot, count: 1 })
   expect(imagesIn(await placed(f, f.recipient.id, message.id))).toEqual([png(7)])
+  // Twice a forwarded image was not the one the text described, and @ultimate relayed it to the user unchecked.
+  expect(captionsIn(await placed(f, f.recipient.id, message.id))).toEqual([
+    `Image 1 of 1 (entry ${shot}, screenshot url=/x fullPage=true):`,
+  ])
   const big = 'A'.repeat(Math.ceil(((2 * 1024 * 1024 + 3) / 3) * 4))
   const oversized = await write(result([{ type: 'image', mimeType: 'image/png', data: big }]))
   await f.send(to, 'Big', { images: oversized })

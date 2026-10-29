@@ -70,8 +70,8 @@ export type MemoryOp =
 
 /** `value` as one validated op; throws with the op's position for anything else. */
 function parseOp(value: unknown, index: number): MemoryOp {
-  const fail = (why: string): never => {
-    throw new Error(`Op ${index + 1}: ${why}`)
+  const fail = (why: string, slug?: string): never => {
+    throw new Error(`Op ${index + 1}${slug ? ` (slug ${slug})` : ''}: ${why}`)
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return fail('expected an object')
   const { op, slug, kind, line, body, source } = value as Record<string, unknown>
@@ -90,13 +90,13 @@ function parseOp(value: unknown, index: number): MemoryOp {
     if (typeof line !== 'string' || !line.trim() || /\n/.test(line.trim()))
       return fail('line must be one non-empty line')
     if (line.trim().length > LINE_CHARS)
-      return fail(`line must be at most ${LINE_CHARS} characters`)
+      return fail(`line is ${line.trim().length} characters, at most ${LINE_CHARS}`, slug)
     fields.line = line.trim()
   }
   if (body !== undefined) {
     if (typeof body !== 'string' || !body.trim()) return fail('body must be non-empty text')
     if (body.trim().length > BODY_CHARS)
-      return fail(`body must be at most ${BODY_CHARS} characters`)
+      return fail(`body is ${body.trim().length} characters, at most ${BODY_CHARS}`, slug)
     fields.body = body.trim()
   }
   if (source !== undefined) {
