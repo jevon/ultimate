@@ -429,9 +429,14 @@ export async function catchup(
   const meanwhile = tree
     ? await tallyText(conversationId, tree, seen.tally ?? tree.since, tx)
     : undefined
+  const since = seen.main
   const commits =
-    main && seen.main && seen.main !== main.sha
-      ? await catchupText(host, conversationId, main, { main: seen.main, at: seen.at }, tx)
+    main && since && since !== main.sha
+      ? await catchupText(host, conversationId, main, { main: since, at: seen.at }, tx).catch(
+          // The catch-up only informs: a failing git must not refuse the input, or nothing reaches the conversation.
+          (error: unknown) =>
+            `Since you last worked, ${main.target} moved from \`${since.slice(0, 7)}\` to \`${main.sha.slice(0, 7)}\`; listing its commits failed (${error instanceof Error ? error.message : String(error)}). Read them with \`git log ${since}..${main.sha}\`.`,
+        )
       : undefined
   if (meanwhile?.tip !== undefined) seen.tally = meanwhile.tip
   if (main) {

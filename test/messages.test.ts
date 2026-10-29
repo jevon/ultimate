@@ -15,6 +15,8 @@ import {
   defineExtension,
   defineTask,
   defineTool,
+  GenerationTask,
+  hook,
   LiveDoc,
   ROOT_CONVERSATION_ID,
 } from '@earendil-works/pi-durable'
@@ -215,10 +217,19 @@ async function fixture(
         }
       : backend,
   )
+  const refusing = new Set<number>()
   prepared.registry.install(
     defineExtension({
       name: 'test-hold',
       tasks: [anchor, reporter],
+      hooks: [
+        hook(GenerationTask, {
+          beforeInput: async (_input, api) => {
+            if (refusing.has(api.conversationId)) throw new Error('input hook broke')
+            return undefined
+          },
+        }),
+      ],
       tools: [
         defineTool({
           name: 'hold',
@@ -314,6 +325,7 @@ async function fixture(
     open,
     hold,
     holding: () => holding,
+    refusing,
     observed,
     transcripts,
   }
@@ -347,6 +359,30 @@ it('wakes an idle recipient and returns one typed reply; one-way messages return
     { message: first.id, from: 1, to: f.recipient.id, reply: true, steer: true },
   ])
   expect(JSON.stringify(sent)).not.toContain('One way')
+})
+// chat #71810: an input hook refused every input to the branch, and its senders were never told.
+it('tells the sending agent, one-way or not, that the recipient refused its message', async () => {
+  const f = await fixture()
+  f.refusing.add(f.recipient.id)
+  await f.send(`#${f.recipient.id}`, 'One way', { reply: false })
+  await f.send(`#${f.recipient.id}`, 'Asking')
+  await until(async () => (await replies(f)).length === 2)
+  const error = `Not delivered to #${f.recipient.id}: input hook broke`
+  const { messages } = (await f.log())!
+  for (const text of ['One way', 'Asking']) {
+    const sent = messages.find((m) => m.text === text)!
+    expect(sent).toMatchObject({ state: 'failed', error })
+    expect(messages.find((m) => m.re === sent.id)).toMatchObject({
+      from: f.recipient.id,
+      to: 1,
+      text: error,
+      state: 'failed',
+    })
+  }
+  expect((await replies(f)).map((e) => (e.data as { failed: boolean }).failed)).toEqual([
+    true,
+    true,
+  ])
 })
 it('records a one-way input answer without returning it to the sender', async () => {
   const f = await fixture()

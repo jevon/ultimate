@@ -153,7 +153,23 @@ export function delivery(host: ExtensionHost) {
               stored.error = error
               delete stored.queued
             }
-            return terminal
+            // An agent learns its message, one-way or not, never arrived, rather than waiting on silence; another
+            // project's Ultimate keeps only the ones that expect a reply.
+            if (m.from === 'user' || (m.from === 'remote' && !m.reply)) return terminal
+            const response = await append(tx, {
+              from: m.to,
+              to: m.from,
+              text: error,
+              reply: false,
+              re: m.id,
+              state: 'failed',
+              error,
+              ...(m.remote ? { remote: m.remote } : {}),
+            })
+            return {
+              status: 'running',
+              checkpoint: { phase: 'reply', message: response, failed: true },
+            }
           }, ctx)
           return undefined
         })

@@ -594,12 +594,14 @@ export function createLander(
                 hint: string,
               ) => {
                 try {
-                  await git(path, 'merge', '--no-edit', '-m', message, commit)
+                  await git(path, 'merge', '--quiet', '--no-edit', '-m', message, commit)
                   return false
-                } catch {
+                } catch (error) {
                   const conflicts = await git(path, 'diff', '--name-only', '--diff-filter=U')
                   // The next attempt starts from a reset, cleaned checkout, so a failed abort cannot leak into it.
                   await git(path, 'merge', '--abort').catch(() => undefined)
+                  // Without conflicted files the merge failed for another reason: report that, not a conflict.
+                  if (!conflicts) throw error
                   await fail(reason, conflicts, hint)
                   return true
                 }
@@ -814,16 +816,22 @@ export function createLander(
         if (outcome.outcome === 'failed') {
           await (
             await runtime.conversation(branch, context)
-          )?.submit(
-            {
-              type: 'input',
-              content: text,
-              entry,
-              whenBusy: 'followUp',
-              requestId: `lander:${id}`,
-            },
-            context,
           )
+            ?.submit(
+              {
+                type: 'input',
+                content: text,
+                entry,
+                whenBusy: 'followUp',
+                requestId: `lander:${id}`,
+              },
+              context,
+            )
+            .catch((error: unknown) => {
+              context.abortSignal?.throwIfAborted()
+              // An input hook refused the report; faulting here would stall every submission queued behind this one.
+              host.notice(`#${branch} did not take its failed-landing report: ${String(error)}`)
+            })
           await runtime.commit(() => next, context)
           return
         }

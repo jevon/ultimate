@@ -32,6 +32,7 @@ import { createLander, landerCheckout, landerPath } from '../../extensions/works
 import { CheckRan, SubmissionLanded } from '../../extensions/workspaces/api.ts'
 import lineage, { leaveNote, startBranch } from '../../extensions/lineage/server.ts'
 import { LineageApi, Roots } from '../../extensions/lineage/api.ts'
+import { Seen } from '../../extensions/lineage/catchup.ts'
 import {
   actions as conversationActions,
   concludeIn,
@@ -1198,6 +1199,51 @@ it.concurrent('wakes only the submitter on a failed landing and leaves it open',
       (entry) => entry.kind === 'workspaces.lander-report',
     ),
   ).toHaveLength(0)
+})
+// chat #71810: its catch-up listed more than 1 MiB of changed paths, so every input to it, the lander's failure report
+// and three messages, was refused, and the lander task faulted.
+it.concurrent('wakes a branch with a huge diff on its failed landing and on a later message', async () => {
+  const { f, id } = await concluding()
+  f.host.projectSettings = async () => ({ lander: { checks: ['exit 1'] } })
+  const workspace = (await f.service.get(id, context))!.path
+  const deep = join(workspace, 'a'.repeat(200), 'b'.repeat(200), 'c'.repeat(200))
+  await mkdir(deep, { recursive: true })
+  await Promise.all(
+    Array.from({ length: 2000 }, (_, i) => writeFile(join(deep, `file-${i}.txt`), String(i))),
+  )
+  await git(workspace, 'add', '.')
+  await git(workspace, 'commit', '--quiet', '-m', 'many paths')
+  const before = await git(f.projectRoot, 'rev-parse', 'main')
+  await commit(f.projectRoot, 'meanwhile.txt')
+  await f.opened.harness.commit(async (tx) => {
+    ;(await tx.doc(Seen, id)).main = before
+  }, context)
+  const { id: submission } = await f.service.submit(id, 'None', context)
+  const [report] = await submitted(f, id)
+  expect(report).toContain('was not landed: check failed twice: exit 1')
+  expect(
+    await f.opened.harness.commit(
+      (tx) => tx.submissionByRequest(id, `lander:${submission}`),
+      context,
+    ),
+  ).toMatchObject({ type: 'input', status: 'done' })
+  const catchups = (
+    await (await f.opened.harness.conversation(id, context))!.context(context)
+  ).entries
+    .filter((entry) => entry.kind === 'lineage.note')
+    .map((entry) => (entry.data as { text: string }).text)
+  expect(catchups).toEqual([expect.stringContaining('meanwhile.txt')])
+  const sent = await f.host
+    .want(MessagesApi)!
+    .send(
+      ROOT_CONVERSATION_ID,
+      { to: `#${id}`, text: 'Phase two, go.', reply: false },
+      'huge-diff-message',
+      context,
+    )
+  const stored = async () => (await messageLog(f)).find((message) => message.id === sent)!
+  await until(async () => (await stored()).state !== 'sent')
+  expect(await stored()).toMatchObject({ state: 'delivered', entry: expect.any(Number) })
 })
 it.concurrent('refuses to land when the untrusted project setup declares checks', async () => {
   const { f, id } = await concluding()

@@ -1,13 +1,17 @@
 import { readdir, realpath } from 'node:fs/promises'
 import { exec } from './exec.ts'
 
-/** Where and how long a git command runs; defaults: 30 seconds, 1 MiB of output. `timeout: 0` waits indefinitely. */
+/** Where and how long a git command runs; defaults: 30 seconds, 64 MiB of output. `timeout: 0` waits indefinitely. */
 export type GitOptions = { cwd: string; timeout?: number; maxBuffer?: number; signal?: AbortSignal }
+const MAX_BUFFER = 64 * 1024 * 1024
 
-/** Run git in `cwd` and return its trimmed stdout; a failure rejects with execFile's error, stderr in its message. */
+/**
+ * Run git in `cwd` and return its trimmed stdout; a failure rejects with execFile's error, stderr in its message. Path
+ * lists outgrow 1 MiB when a commit deletes a vendored tree: a merge's summary, `diff --name-only`, `status`.
+ */
 export async function git(cwd: string | GitOptions, ...args: string[]) {
   const options = typeof cwd === 'string' ? { cwd } : cwd
-  const { stdout } = await exec('git', args, { timeout: 30000, maxBuffer: 1024 * 1024, ...options })
+  const { stdout } = await exec('git', args, { timeout: 30000, maxBuffer: MAX_BUFFER, ...options })
   return stdout.trim()
 }
 
