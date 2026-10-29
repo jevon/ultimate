@@ -361,12 +361,18 @@ export default function browserExtension(host: ExtensionHost) {
       page.on('pageerror', (error) => outcomes.push(`Page error: ${error.message}`))
       const url = new URL(args.url ?? '', host.system().process.url).href
       // Any Ultimate page, this UI or a preview, gets `window.ultimate` for send/until steps.
-      await guard(page.addInitScript(() => sessionStorage.setItem('ultimate.driven', '1')))
+      // Init scripts run in every frame; sandboxed iframes without allow-same-origin throw on storage access.
+      await guard(
+        page.addInitScript(() => {
+          if (self === top) sessionStorage.setItem('ultimate.driven', '1')
+        }),
+      )
       if (new URL(url).origin === new URL(host.system().process.url).origin) {
         // Own UI: this page is detached from the shared UI state (web/src/sdk/client.ts), so its `?conversation=`
         // and clicks never move the user's tabs; the theme is this browser's preference.
         await guard(
           page.addInitScript((theme: string | undefined) => {
+            if (self !== top) return
             sessionStorage.setItem('ultimate.detached', '1')
             if (theme) localStorage.setItem('ultimate.theme', theme)
           }, args.theme),
