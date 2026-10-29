@@ -14,6 +14,8 @@ import type { Context } from '@earendil-works/chord'
 import { UiState } from './ui-state.ts'
 import { listModels } from './models.ts'
 import { guardToolArguments, modelTrace } from './tool-arguments.ts'
+import { readFamilies } from '../lib/families-settings.ts'
+import { refOf } from '../lib/families.ts'
 import { callTrace } from './trace.ts'
 import { projectSkills } from './skills.ts'
 import { requestSwap } from './supervisor-protocol.ts'
@@ -160,7 +162,8 @@ export async function prepareHarness(options: HostOptions) {
   /** The default model, read when the harness opens, after extensions registered theirs. */
   const preferred = async () => {
     if (faux) return { provider: faux.getModel().provider, modelId: faux.getModel().id }
-    return defaultModel(await modelRuntime.getAvailable(), settings)
+    const family = (await readFamilies(userHome, projectRoot)).families.default
+    return defaultModel(await modelRuntime.getAvailable(), settings, refOf(family.model))
   }
   let active:
     | {
@@ -262,9 +265,11 @@ export async function prepareHarness(options: HostOptions) {
           context,
         )
         const model = await preferred()
-        const root = await harness.root(context, {
-          agent: { cwd: projectRoot, thinkingLevel: settings.getDefaultThinkingLevel() },
-        })
+        // The default family's thinking, else Pi's default level.
+        const thinkingLevel =
+          (await readFamilies(userHome, projectRoot)).families.default.thinking ??
+          settings.getDefaultThinkingLevel()
+        const root = await harness.root(context, { agent: { cwd: projectRoot, thinkingLevel } })
         await root.commit(async (tx) => {
           await tx.doc(UiState, root.id)
           // The root runs no turns, but what reads its agent (tally compaction, inheriting callers) gets a model with a

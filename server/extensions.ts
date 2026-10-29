@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, realpath } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { compareExtensions, discoverExtensions } from './discovery.ts'
 import { decisionRoot, projectSetup, projectSettings, projectDiagnostics } from './project-setup.ts'
@@ -687,7 +687,9 @@ export async function loadExtensions(
     enqueue(async () => {
       try {
         const selected = new Set<string>()
-        const modules = vite.moduleGraph.getModulesByFile(file)
+        // Vite keys its graph by real path, while the watcher reports a symlinked extension's files through the
+        // link. A file removed since the event has no real path; its link path then misses the graph, as before.
+        const modules = vite.moduleGraph.getModulesByFile(await realpath(file).catch(() => file))
         const visited = new Set<import('vite-plus').ModuleNode>()
         const visit = (module: import('vite-plus').ModuleNode) => {
           if (visited.has(module)) return

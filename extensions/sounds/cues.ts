@@ -1,12 +1,13 @@
 import type { Message } from '../messages/refs.ts'
 import type { OverviewRow } from '../conversations/types.ts'
 
-export type Sound = 'input' | 'finished' | 'failed'
+export type Sound = 'input' | 'finished' | 'failed' | 'landed'
 
 export const sounds: { sound: Sound; label: string }[] = [
   { sound: 'input', label: 'Needs input' },
   { sound: 'finished', label: 'Finished' },
   { sound: 'failed', label: 'Failed' },
+  { sound: 'landed', label: 'Landed' },
 ]
 
 /** What is due to sound: `key` names the event, so it sounds once. */
@@ -18,13 +19,15 @@ export type Watched = {
   agent?: number
   row?: OverviewRow
   messages: readonly Pick<Message, 'id' | 'from' | 'to' | 'reply'>[]
+  /** Recent `workspaces.landed` events: a submission landed on the project's target branch. */
+  landings?: readonly { id: number }[]
 }
 
 /**
  * The agent's own news for the user: a failed run, an answer to the user's typed input, and each message to the user
- * (a question when it expects a reply). Answers to other agents stay quiet.
+ * (a question when it expects a reply). Answers to other agents stay quiet. Each landing on the target branch sounds too.
  */
-export function cuesOf({ agent, row, messages }: Watched): Cue[] {
+export function cuesOf({ agent, row, messages, landings = [] }: Watched): Cue[] {
   if (agent === undefined) return []
   const cues = messages
     .filter((message) => message.from === agent && message.to === 'user')
@@ -36,16 +39,18 @@ export function cuesOf({ agent, row, messages }: Watched): Cue[] {
     cues.push({ key: `${agent}:${row.inputId}`, sound: 'failed' })
   else if (row?.runState === 'answered' && row.answerId !== undefined && !row.internalInput)
     cues.push({ key: `${agent}:${row.answerId}`, sound: 'finished' })
+  for (const landing of landings) cues.push({ key: `landed:${landing.id}`, sound: 'landed' })
   return cues
 }
 
 /**
  * Follows the agent over time and says what is due to sound: whatever it shows at first was heard already, later news
- * is due once.
+ * is due once. While `catchingUp` (the stream reconnects, or the tab just showed again) new landings are heard without
+ * sounding: the event feed brings what happened while the tab was away.
  */
 export function listener() {
   let heard: Set<string> | undefined
-  return (watched: Watched) => {
+  return (watched: Watched, catchingUp = false) => {
     const cues = cuesOf(watched)
     if (!heard) {
       heard = new Set(cues.map((cue) => cue.key))
@@ -53,6 +58,6 @@ export function listener() {
     }
     const due = cues.filter((cue) => !heard!.has(cue.key))
     for (const cue of due) heard.add(cue.key)
-    return due
+    return catchingUp ? due.filter((cue) => cue.sound !== 'landed') : due
   }
 }

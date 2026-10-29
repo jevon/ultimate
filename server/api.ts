@@ -319,7 +319,6 @@ export async function createApi(
       void stop().catch((error: unknown) => console.error('Stopping event stream failed:', error))
     })
     if (request.destroyed || response.destroyed) await stop()
-    return connection
   }
   /**
    * Stream a conversation's view (when `view`) and documents on `connection` as subscription `sub`: snapshots first,
@@ -418,20 +417,7 @@ export async function createApi(
         )
           throw new HttpError(403, 'Forbidden')
         if (request.method === 'GET' && url.pathname === '/api/events') {
-          // `conversation` and `docs` subscribe at once as subscription 0, for scripts that read one stream.
-          const selected = ['conversation', 'docs'].some((key) => url.searchParams.has(key))
-          const id = conversationParam(url.searchParams.get('conversation') ?? undefined)
-          if (selected && !(await harness.conversation(id, context)))
-            throw new HttpError(404, 'Unknown conversation')
-          const connection = await stream(request, response)
-          if (selected)
-            await subscribe(
-              connection,
-              0,
-              id,
-              (url.searchParams.get('docs') ?? '').split(',').filter(Boolean),
-              true,
-            )
+          await stream(request, response)
           return true
         }
         const subscription = subscriptionPath.exec(url.pathname)

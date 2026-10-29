@@ -2,8 +2,15 @@
   "extensions": {
     "enable": ["voice-live"]
   },
-  "instance": {
-    "model": "anthropic/claude-opus-5-5"
+  "modelFamilies": {
+    "families": {
+      "lead": { "model": "anthropic/claude-opus-5-5", "thinking": "high", "color": "orange" },
+      "review": { "model": "anthropic/claude-opus-5-5", "thinking": "high" },
+      "fast": { "model": "anthropic/claude-opus-5-5" }
+    },
+    "assign": {
+      "preview": "fast"
+    }
   },
   "isolates": {
     "worktree": {

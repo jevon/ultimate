@@ -3,11 +3,11 @@
 Each extension is a folder `extensions/<name>/`: `server.ts` exports a Durable extension with that name
 (or a factory receiving `ExtensionHost`, which provides `ultimateRoot` (the clone), `projectRoot` (your work), state/home paths, models/settings, build and system inspection, conversation summaries, harness access, shared resources, and lifecycle hooks), `web.tsx` is its optional browser facet
 (`defineWebExtension` from `@/sdk`), and `README.md` describes it. The server facet may export `docs`, an array of conversation document tokens;
-subscribe with `/api/events?conversation=<id>&docs=<kind>,<kind>` for `doc` snapshots and `docOps` batches. A browser
-tab keeps one `/api/events` stream and adds and removes subscriptions on it with `POST` and `DELETE
-/api/events/<stream>/<sub>` (`ServerEvents` in `shared/protocol.ts`). The query subscribes as sub 0. A subscription's
-`view`, `ops`, `doc` and `docOps` events carry its id on their first data line, so their `data` reads `0\n{…}`: parse
-what follows the first newline.
+read their `doc` snapshots and `docOps` batches from `/api/events`. A browser tab keeps one such stream; its first
+event, `stream`, carries the id with which `POST /api/events/<stream>/<sub>` (`{ conversation?, docs?, view? }`)
+subscribes to a conversation and `DELETE` ends that (`ServerEvents` in `shared/protocol.ts`). A subscription's
+`view`, `ops`, `doc` and `docOps` events carry its id on their first data line, so their `data` reads `<sub>\n{…}`:
+parse what follows the first newline.
 The Documents tab shows each exported kind through the renderer a web facet registers (`documents: [{ kind, title, component }]`), or as JSON.
 Local imported modules reload with the facet. Failed loads leave the previous version installed.
 

@@ -88,11 +88,18 @@ function failure(error: unknown, credentials: boolean) {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** The text of a tool's error result, cut at about 300 characters. */
-function toolError(output: ToolExecutionResult['output']) {
-  const text = (output ?? [])
-    .flatMap((part) => (part.type === 'text' ? [part.text] : []))
-    .join('\n')
+/**
+ * What a tool's error result says, cut at about 300 characters: its error diagnostics, then its text. A shell command
+ * that exits nonzero has no text parts, its retained output tail sits in `structuredOutput.output`, and its one error
+ * diagnostic says `Command exited with code 2`; that is the row's error.
+ */
+function toolError(result: ToolExecutionResult) {
+  const text = [
+    ...(result.diagnostics ?? []).flatMap((item) =>
+      item.severity === 'error' ? [item.message] : [],
+    ),
+    ...(result.output ?? []).flatMap((part) => (part.type === 'text' ? [part.text] : [])),
+  ].join('\n')
   return text.length <= LIMIT ? text : text.slice(0, LIMIT) + '…'
 }
 
@@ -397,7 +404,7 @@ CREATE INDEX IF NOT EXISTS calls_at ON calls (at);`)
           try {
             const result = await storage.run(self, () => tool.execute(args, api, context))
             // A tool that returns an error result failed, though it did not throw; its row keeps the error's text.
-            if (result?.isError) finish(false, toolError(result.output))
+            if (result?.isError) finish(false, toolError(result))
             else finish(true, result)
             return result
           } catch (error) {

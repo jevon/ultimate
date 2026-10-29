@@ -34,7 +34,9 @@ import type { ToolCallView } from '@/sdk'
 import { ConversationTask } from '../conversations/ui.tsx'
 import { stateLabel, useWorkspaceConversations as useConversations } from '../workspaces/ui.tsx'
 import type { Workspace as Isolate, LandResult } from '../workspaces/types.ts'
-import { DefinitionDialog, Definitions } from './definitions.tsx'
+import { agentsPanel } from '../models/ui.tsx'
+import { DefinitionDialog } from './definitions.tsx'
+import { AgentsOverview } from './overview.tsx'
 import { Tag } from './parts.tsx'
 import { AgentInbox, AgentInput, AgentMessages } from './messages.tsx'
 import { openAgentSource, talkToUltimate } from './ui.tsx'
@@ -327,7 +329,9 @@ function LandOnUltimate() {
 
 export default defineWebExtension({
   tools: { subagent: SubagentCall },
-  panels: [{ id: 'agents', title: 'Agents', icon: NetworkIcon, component: Definitions, order: 3 }],
+  panels: [
+    { id: agentsPanel, title: 'Agents', icon: NetworkIcon, component: AgentsOverview, order: 3 },
+  ],
   entries: { 'subagents.instruction': AgentInput, 'subagents.report': AgentInput },
   inbox: AgentInbox,
   slots: { overlay: [DefinitionDialog, LandOnUltimate], 'header.right': [AgentMessages] },
@@ -341,7 +345,7 @@ export default defineWebExtension({
     {
       id: 'subagents.open',
       title: 'Show agent definitions',
-      run: (context) => context.openPanel('agents'),
+      run: (context) => context.openPanel(agentsPanel),
     },
   ],
 })

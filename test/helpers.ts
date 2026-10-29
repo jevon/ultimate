@@ -262,8 +262,11 @@ export async function post(server: string | { url: string }, path: string, data:
   })
   return { status: response.status, data: await response.json() }
 }
-/** Read `/api/events`; the query subscribes at open as sub 0, by default to the root (#1). */
-export async function attach(server: string | { url: string }, query = '?conversation=1') {
+/** Read `/api/events`, subscribing each stream it opens as sub 0 to a conversation (the root by default) and its documents. */
+export async function attach(
+  server: string | { url: string },
+  subscription: { conversation?: number; docs?: string[] } = {},
+) {
   const url = typeof server === 'string' ? server : server.url
   const controller = new AbortController()
   const events: { name: keyof ServerEvents; data: unknown; sub?: number }[] = []
@@ -273,7 +276,7 @@ export async function attach(server: string | { url: string }, query = '?convers
   const task = (async () => {
     while (!controller.signal.aborted) {
       try {
-        const response = await fetch(url + '/api/events' + query, { signal: controller.signal })
+        const response = await fetch(url + '/api/events', { signal: controller.signal })
         if (response.status !== 200) throw new Error(`SSE status ${response.status}`)
         connections++
         const reader = response.body!.getReader()
@@ -293,6 +296,14 @@ export async function attach(server: string | { url: string }, query = '?convers
             if (!name || !data) continue
             const parsed: unknown = JSON.parse(data)
             events.push({ name, data: parsed, ...(lines.length > 1 && { sub: Number(lines[0]) }) })
+            if (name === 'stream')
+              void fetch(`${url}/api/events/${(parsed as { id: string }).id}/0`, {
+                method: 'POST',
+                headers: { Origin: url },
+                body: JSON.stringify(subscription),
+              }).catch(() => {
+                // The stream ended: its reconnect subscribes again.
+              })
             if (name === 'system') system = parsed as SystemInfo
             if (name === 'view') view = parsed as ConversationView
             if (name === 'ops' && view) view = applyImmutable(view, parsed as Op[])

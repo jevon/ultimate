@@ -53,3 +53,40 @@ it('loads a linked extension from its new target after the link is repointed and
     await server.close()
   }
 })
+
+it("reloads a linked extension's server facet when a file its server.ts imports changes", async () => {
+  const home = await temp()
+  homes.push(home)
+  const projectRoot = join(home, 'project')
+  await mkdir(projectRoot)
+  const dir = join(home, 'real', 'linked')
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, 'logic.ts'), "export const answer = 'A'\n")
+  await writeFile(
+    join(dir, 'server.ts'),
+    `import { answer } from './logic.ts'
+export const actions = { which: () => answer }
+export default { name: 'linked' }
+`,
+  )
+  await mkdir(join(home, '.ultimate/extensions'), { recursive: true })
+  await symlink(dir, join(home, '.ultimate/extensions/linked'))
+  const server = await fauxServer({
+    ultimateRoot: resolve('.'),
+    projectRoot,
+    userHome: home,
+    home: join(home, 'state'),
+  })
+  try {
+    const which = () => server.extensions.action('linked', 'which')?.({}, {} as never)
+    expect(await which()).toBe('A')
+    const record = () => server.extensions.info().find((entry) => entry.name === 'linked')
+    const loadedAt = record()?.server?.loadedAt
+    await writeFile(join(dir, 'logic.ts'), "export const answer = 'B'\n")
+    await until(() => !!record()?.server?.error || record()?.server?.loadedAt !== loadedAt)
+    expect(record()?.server?.error).toBeUndefined()
+    expect(await which()).toBe('B')
+  } finally {
+    await server.close()
+  }
+})

@@ -156,7 +156,11 @@ function find(node: ReactNode, key: string): ReactElement<{ onClick: () => void 
 }
 
 it('points the model and thinking controls inside a scope at the scoped conversation, not the shown one', async () => {
-  harness.sources[0].send('system', { process: { pid: 1, generation: 1 } } as never)
+  harness.sources[0].send('system', {
+    process: { pid: 1, generation: 1 },
+    code: { sha: 'abc' },
+    project: { settings: {} },
+  } as never)
   stream().send('view', view(1, 'main-model', 'off'))
   const [ModelButton, ThinkingButton] = models.slots!['composer.toolbar'] as [
     () => ReactElement,

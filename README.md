@@ -3,10 +3,10 @@
 > [!NOTE]
 > **A personal project, shared as inspiration.** Ultimate is not a library or a product with users to support. Copy
 > what you like, fork it, do whatever you want with it. To make it work your way, ask Ultimate to change itself; it
-> keeps your changes in `.ultimate/` folders that survive updates. I merge only clear-cut fixes to the core; feature
-> pull requests stay open, unmerged, as reference implementations. I change things as I go, fundamental ones
-> included, without migration paths or regard for anyone building on top. Whether that works for you is your call.
-> See [CONTRIBUTING.md](CONTRIBUTING.md).
+> keeps your changes in `.ultimate/` folders that survive updates. Pull requests are welcome as shared ideas: most stay
+> open, unmerged, as references anyone can adopt, and I merge only clear-cut fixes or improvements to the core. I
+> change things as I go, fundamental ones included, without migration paths or regard for anyone building on top.
+> Whether that works for you is your call. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 A coding agent you specialize for the project you work on. Start it in your repository and it is Pi's coding agent in a
 web UI. Then build what this project needs into it, such as custom tools, panels, subagents, skills, or whole screens,
@@ -83,7 +83,6 @@ pnpm install
 pnpm link --global  # once, in this clone, to get the `ultimate` command (`pnpm setup` first if pnpm's global bin is not on PATH)
 pnpm start          # Ultimate on its own repository; opens http://127.0.0.1:4747
 cd ~/Projects/app && ultimate  # or Ultimate on one of your projects
-pnpm cli            # emergency terminal agent when the UI, server or database is broken
 ```
 
 - **First start** on a machine shows Get ready: log in to a provider and choose a model. Continue opens @ultimate,
@@ -98,9 +97,6 @@ pnpm cli            # emergency terminal agent when the UI, server or database i
   live, for this project or everywhere, and can change the project choice.
 - On another machine: `ssh -L 4747:127.0.0.1:4747 <host>`, then open `http://127.0.0.1:4747`. Ultimate only listens on
   loopback.
-- **When everything is broken:** `pnpm cli` in the clone (or `ultimate --cli` in a project) opens Pi's terminal agent
-  with Ultimate's instructions, skills, your default model and the Claude Code provider. It starts no server and opens
-  no database; further arguments go to Pi, e.g. `pnpm cli --model claude-code/claude-opus-5-5 "why won't it boot"`.
 
 ### Recommended models
 

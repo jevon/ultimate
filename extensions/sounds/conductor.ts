@@ -2,8 +2,8 @@
  * The one band of this tab: which variant plays, what the live project and the demo feed it, and whether the browser
  * lets it play yet. Loads the Tone.js engine only once the sound of agents is on.
  */
-import { demo, demoLength, demoPlayer, mix, silence } from './agents.ts'
-import type { Happening, Level, Variant } from './agents.ts'
+import { demo, demoLength, demoPlayer } from './agents.ts'
+import type { Happening, Variant } from './agents.ts'
 import type { Band } from './engine.ts'
 import { engine } from './tones.ts'
 
@@ -17,7 +17,6 @@ export type Stage = {
 
 let stage: Stage = { blocked: false }
 let band: Band | undefined
-let levels: { live: Level; demo: Level } = { live: silence, demo: silence }
 let timers: ReturnType<typeof setTimeout>[] = []
 const listeners = new Set<() => void>()
 
@@ -65,22 +64,19 @@ export async function conduct(variant: Variant | undefined) {
     set({ blocked: true })
     waitForGesture()
   } else await tone.unlock()
-  const playing = tone.band(variant)
-  playing.level(mix(levels.live, levels.demo))
-  band = playing
+  band = tone.band(variant)
 }
 
-export const hit = (happening: Happening) => band?.hit(happening)
+/** Hands `happening` to the band; a hidden tab plays nothing, so nothing waits to play on its return. */
+export const hit = (happening: Happening) => {
+  if (!document.hidden) band?.hit(happening)
+}
 
 // A hot reload replaces this module: the old band would keep playing on the shared transport beside the new one.
 import.meta.hot?.dispose(() => {
   band?.dispose()
   stopDemo()
 })
-export function level(source: 'live' | 'demo', next: Level) {
-  levels = { ...levels, [source]: next }
-  band?.level(mix(levels.live, levels.demo))
-}
 
 /** Plays the scripted demo through the band: a feature from first message to landing, about 40 seconds. */
 export function startDemo() {
@@ -88,9 +84,8 @@ export function startDemo() {
   const step = demoPlayer()
   timers = demo.map((s) =>
     setTimeout(() => {
-      const { happening, level: next } = step(s)
+      const happening = step(s)
       if (happening) hit(happening)
-      level('demo', next)
     }, s.at * 1000),
   )
   timers.push(setTimeout(stopDemo, demoLength * 1000))
@@ -99,6 +94,5 @@ export function startDemo() {
 export function stopDemo() {
   for (const timer of timers) clearTimeout(timer)
   timers = []
-  level('demo', silence)
   if (stage.demoUntil !== undefined) set({ demoUntil: undefined })
 }

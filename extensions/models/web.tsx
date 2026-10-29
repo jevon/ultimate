@@ -16,6 +16,8 @@ import {
 } from '@/sdk'
 import type { EntryRecord } from '@/sdk'
 import { LoginDialog } from './login.tsx'
+import { familyTitle } from '../../lib/families.ts'
+import { agentsPanel, FamilyDot, familyOf, useFamilies } from './families.tsx'
 import { ModelPicker } from './picker.tsx'
 import { nextThinking, openLogin, openPicker, thinkingDialog, useCurrentModel } from './state.tsx'
 import type { ThinkingLevel } from './state.tsx'
@@ -26,7 +28,8 @@ const toolbarButton =
   'flex h-7 max-w-56 shrink-0 items-center gap-1.5 rounded-md px-2 font-mono text-[11.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground'
 
 function ModelButton() {
-  const { ref, loading } = useCurrentModel()
+  const { ref, thinking, loading } = useCurrentModel()
+  const family = familyOf(useFamilies(), ref, thinking)
   const actions = useUltimate()
   return (
     <button
@@ -43,14 +46,22 @@ function ModelButton() {
       }
       type="button"
     >
-      <CpuIcon className="size-3.5 shrink-0" />
+      {family && !loading ? (
+        <FamilyDot color={family.color} className="mx-0.5" />
+      ) : (
+        <CpuIcon className="size-3.5 shrink-0" />
+      )}
       <span
         className={cn(
           'truncate',
           loading ? undefined : ref ? 'text-foreground/85' : 'text-warning',
         )}
       >
-        {loading ? 'model…' : (ref?.modelId ?? 'no model')}
+        {loading
+          ? 'model…'
+          : family
+            ? `${familyTitle(family.name)} (${ref!.modelId})`
+            : (ref?.modelId ?? 'no model')}
       </span>
       <ChevronDownIcon className="size-3 shrink-0 opacity-60 @max-md:hidden" />
     </button>
@@ -220,6 +231,11 @@ export default defineWebExtension({
   entries: { 'pi.assistant': Switched, 'models.fallback': FellBack },
   slots: { 'composer.toolbar': [ModelButton, ThinkingButton], overlay: [ModelPicker, LoginDialog] },
   commands: [
+    {
+      id: 'model.families',
+      title: 'Model families…',
+      run: (context) => context.openPanel(agentsPanel),
+    },
     {
       id: 'model.pick',
       title: 'Pick a model',

@@ -1,5 +1,6 @@
-import { join } from 'node:path'
-import { readdir, readFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import type { Plugin } from 'vite-plus'
 import { discoverExtensions } from './discovery.ts'
 import { discoveryRoots } from './project.ts'
@@ -20,8 +21,12 @@ export function extensionModules(
   const trustFile = join(userHome, '.ultimate/trust.json')
   const settingsFiles = [...extensionSettingsFiles(projectRoot, userHome), trustFile]
   const watchers = new WeakMap<object, () => void>()
+  let sourcesFile = ''
   return {
     name: 'ultimate:extension-modules',
+    configResolved(config) {
+      sourcesFile = join(config.cacheDir, 'extension-sources.css')
+    },
     closeBundle() {
       watchers.get(this.environment)?.()
       watchers.delete(this.environment)
@@ -69,21 +74,31 @@ export function extensionModules(
     async load(id) {
       if (id.split('?')[0] === join(ultimateRoot, 'web/src/index.css')) {
         // Tailwind skips a git-ignored symlinked extension inside a root, so its target is a source of its own.
-        // Tailwind reads sources once per process: links added later count after a restart.
         const linked = (await discoverExtensions(ultimateRoot, projectRoot, userHome))
           .filter(
             (entry) => entry.source !== 'builtin' && !entry.error && entry.target !== entry.path,
           )
           .map((entry) => entry.target)
+        const sources = [
+          ...roots.filter(
+            (root, index) =>
+              existsSync(root) && (index !== 2 || useProjectSetup(projectRoot, userHome)),
+          ),
+          ...linked,
+        ]
+          .map((root) => `@source ${JSON.stringify(root)};\n`)
+          .join('')
+        // Tailwind keeps its compiler, and so its sources, until an imported file's mtime changes: the sources live in
+        // their own file, rewritten when a root appears, a link is added or the project's trust changes. A scanner
+        // never picks up a source folder that was missing when it started, so only existing roots are listed.
+        const current = await readFile(sourcesFile, 'utf8').catch(() => undefined) // Missing until the first write.
+        if (current !== sources) {
+          await mkdir(dirname(sourcesFile), { recursive: true })
+          await writeFile(sourcesFile, sources)
+        }
         return (
           (await readFile(join(ultimateRoot, 'web/src/index.css'), 'utf8')) +
-          '\n' +
-          [
-            ...roots.filter((_, index) => index !== 2 || useProjectSetup(projectRoot, userHome)),
-            ...linked,
-          ]
-            .map((root) => `@source ${JSON.stringify(root)};`)
-            .join('\n')
+          `\n@import ${JSON.stringify(sourcesFile)};\n`
         )
       }
       if (id !== resolved) return undefined
@@ -117,10 +132,7 @@ export function extensionModules(
           !roots.some((root) => file === root || file.startsWith(root + '/'))
         )
           return
-        for (const id of [
-          resolved,
-          ...(file === trustFile ? [join(ultimateRoot, 'web/src/index.css')] : []),
-        ]) {
+        for (const id of [resolved, join(ultimateRoot, 'web/src/index.css')]) {
           const module = server.moduleGraph.getModuleById(id)
           if (module) {
             server.moduleGraph.invalidateModule(module)

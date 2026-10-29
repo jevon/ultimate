@@ -55,3 +55,14 @@ it('takes what is there at first as heard, and sounds later news once', () => {
     { key: '7:30', sound: 'failed' },
   ])
 })
+
+it('sounds each landing once, and not those that arrive while catching up', () => {
+  const hear = listener()
+  expect(hear(watched({ landings: [{ id: 1 }] }))).toEqual([])
+  expect(hear(watched({ landings: [{ id: 2 }, { id: 1 }] }))).toEqual([
+    { key: 'landed:2', sound: 'landed' },
+  ])
+  expect(hear(watched({ landings: [{ id: 2 }, { id: 1 }] }))).toEqual([])
+  expect(hear(watched({ landings: [{ id: 3 }, { id: 2 }] }), true)).toEqual([])
+  expect(hear(watched({ landings: [{ id: 3 }, { id: 2 }] }))).toEqual([])
+})

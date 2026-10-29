@@ -23,7 +23,7 @@ import { ConversationRef } from '../conversations/ui.tsx'
 import { lasted } from './lasted.ts'
 import { parkedConversations } from './parked.ts'
 import { AutoPlayAction, PauseAction, PauseDoc, PlayAction, StateAction } from './refs.ts'
-import type { AutoPlayed, PauseNote, PauseState, RateLimit } from './refs.ts'
+import type { AutoPlayed, HeldNote, PauseNote, PauseState, RateLimit } from './refs.ts'
 
 const statusButton =
   '-mx-1 flex cursor-pointer items-center gap-1.5 rounded-sm px-1 transition-colors hover:bg-accent'
@@ -335,6 +335,35 @@ function Note({ entry }: { entry: EntryRecord }) {
   )
 }
 
+/** In a parent held by the pause: which subagent hit the rate limit. One quiet divider; the child opens on click. */
+function Held({ entry }: { entry: EntryRecord }) {
+  const data = (entry.data ?? {}) as Partial<HeldNote>
+  const { switchConversation } = useUltimate()
+  if (data.child === undefined || data.provider === undefined) return null
+  const child = data.child
+  return (
+    <div
+      className="flex items-center gap-3 font-mono text-[11px] text-muted-foreground/80 before:h-px before:flex-1 before:bg-warning/25 after:h-px after:flex-1 after:bg-warning/25"
+      data-pause-held
+    >
+      <span className="flex min-w-0 items-center gap-1.5">
+        <PauseIcon className="size-3 shrink-0 text-warning" />
+        <button
+          className="min-w-0 cursor-pointer truncate text-foreground hover:underline"
+          onClick={() => switchConversation(child)}
+          type="button"
+        >
+          <ConversationRef id={child} />
+        </button>
+        <span className="truncate">
+          hit {data.provider}’s rate limit ·{' '}
+          <span className="text-warning">Ultimate paused until Play</span>
+        </span>
+      </span>
+    </div>
+  )
+}
+
 /** The card a rate limit leaves in @ultimate's transcript: who limited what, and Play while this pause holds. */
 function Limit({ entry }: { entry: EntryRecord }) {
   const limit = (entry.data ?? {}) as Partial<RateLimit>
@@ -452,7 +481,12 @@ export default defineWebExtension({
     ],
     'composer.status': [Hint],
   },
-  entries: { 'pause.note': Note, 'pause.limit': Limit, 'pause.autoplay': AutoPlayedNote },
+  entries: {
+    'pause.note': Note,
+    'pause.limit': Limit,
+    'pause.autoplay': AutoPlayedNote,
+    'pause.held': Held,
+  },
   commands: [
     {
       id: 'pause.pause',

@@ -553,7 +553,7 @@ export default host => { host.resource('cleanup.process',()=>{
     const { server, options } = await fixture()
     const created = await post(server, '/api/conversations')
     const first = await attach(server)
-    const second = await attach(server, `?conversation=${created.data.id as number}`)
+    const second = await attach(server, { conversation: created.data.id as number })
     expect(
       await post(server, '/api/ui', { set: { 'shell.panel': 'tasks', 'app.count': 2 } }),
     ).toEqual({ status: 200, data: { ok: true, rev: 1 } })
@@ -823,7 +823,7 @@ export default host => { host.resource('cleanup.process',()=>{
       cwd: server.host.projectRoot,
     })
     expect(created.status).toBe(201)
-    const stream = await attach(server, '?conversation=' + created.data.id)
+    const stream = await attach(server, { conversation: created.data.id as number })
     const summaries = stream.events.find((event) => event.name === 'conversations')!.data
     expect(summaries).toEqual(
       expect.arrayContaining([
@@ -884,7 +884,7 @@ export const actions = { list: async (_args, ctx) => ctx.host.conversations() }`
   })
   it('streams extension document snapshots and deltas, with a notice for unknown kinds', async () => {
     const { server } = await fixture(true)
-    const stream = await attach(server, '?docs=test.counter,missing')
+    const stream = await attach(server, { docs: ['test.counter', 'missing'] })
     await until(() => stream.events.some((event) => event.name === 'doc'))
     expect(stream.events.find((event) => event.name === 'doc')!.data).toEqual({
       kind: 'test.counter',
@@ -908,7 +908,7 @@ export const actions = { list: async (_args, ctx) => ctx.host.conversations() }`
   })
   it('carries subscriptions opened and closed on one stream, each event tagged with its id', async () => {
     const { server } = await fixture(true)
-    const stream = await attach(server, '?docs=test.counter')
+    const stream = await attach(server, { docs: ['test.counter'] })
     const { id } = stream.events.find((event) => event.name === 'stream')!.data as { id: string }
     const call = (method: string, sub: number, data?: unknown) =>
       fetch(`${server.url}/api/events/${id}/${sub}`, {
@@ -963,7 +963,7 @@ export const actions = { list: async (_args, ctx) => ctx.host.conversations() }`
         return { type: 'api_key', key: answered }
       },
     )
-    const stream = await attach(server, '?docs=models.login')
+    const stream = await attach(server, { docs: ['models.login'] })
     const action = (name: string, args: unknown, conversationId = 1) =>
       post(server, `/api/extensions/models/actions/${name}`, { args, conversationId })
     const flows = async (id = 1) =>

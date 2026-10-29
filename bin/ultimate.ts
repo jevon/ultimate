@@ -19,20 +19,12 @@ import { isCoreReport } from '../server/supervisor-protocol.ts'
 import type { CoreReport } from '../server/supervisor-protocol.ts'
 import { dashboard } from './dashboard.ts'
 
-// `ultimate --cli …` is the emergency terminal agent: no supervisor, lock, server or storage.
-if (process.argv[2] === '--cli') {
-  const { cli } = await import('./cli.ts')
-  await cli(process.argv.slice(3))
-  // Pi's interactive mode exits the process itself; print mode returns here.
-  process.exit()
-}
 const ultimateRoot = resolvePath(fileURLToPath(new URL('..', import.meta.url)))
 const { values, positionals } = parseArgs({
   options: { port: { type: 'string' }, 'no-open': { type: 'boolean' } },
   allowPositionals: true,
 })
-if (positionals.length > 1)
-  throw new Error('Usage: ultimate [dir] [--port N] [--no-open] | ultimate --cli [pi args…]')
+if (positionals.length > 1) throw new Error('Usage: ultimate [dir] [--port N] [--no-open]')
 const opening = !values['no-open'] && process.env.ULTIMATE_NO_OPEN !== '1'
 const available = (name: string) =>
   process.env.PATH?.split(':').some((path) => existsSync(join(path, name)))

@@ -58,4 +58,5 @@ in separate commits after the merge.
 ## GitHub actions are not yours
 
 Never comment, close, retitle, label or approve the pull request. Hand the wording to @ultimate, which does it with
-the user's OK.
+the user's OK. In that wording, write agent names in backticks (`` `@ultimate` ``) or without the @: on GitHub
+`@name` notifies the real user of that name.
