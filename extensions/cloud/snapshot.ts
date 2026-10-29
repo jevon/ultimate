@@ -48,8 +48,7 @@ const CHUNK = 16 * 1024 * 1024
 // A for-each-ref pattern without a trailing slash matches refs below it, not `ultimate-moved/`.
 const BRANCHES = 'refs/heads/ultimate'
 /** Bundles take as long as they take and list every branch. */
-const git = (repo: string, ...args: string[]) =>
-  gitIn({ cwd: repo, timeout: 0, maxBuffer: 16 * 1024 * 1024 }, ...args)
+const git = (repo: string, ...args: string[]) => gitIn({ cwd: repo, timeout: 0 }, ...args)
 
 /**
  * Copy a closed or open SQLite file consistently (VACUUM INTO via node:sqlite, read-only), compress (zlib zstd), encrypt

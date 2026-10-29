@@ -133,7 +133,8 @@ Note deliveries complete after placement, without waiting for an answer.
 A delivery that triage, before its removal, had already written as context (`board:<id>` or `board-reply:<id>` is a
 write) resumes with one short `board-wake:<id>` input after it, so the recipient still wakes once.
 When the recipient's input hooks refuse placement, the message becomes `failed` with `error` naming the cause, and
-the task completes instead of faulting with the message stuck in `sent`. A reply-enabled message whose recipient ends
+the task completes instead of faulting with the message stuck in `sent`; an agent sender, one-way or not, and another
+project's Ultimate awaiting a reply get a failed reply naming the cause, so a refusal is never silent. A reply-enabled message whose recipient ends
 its run without an answer gets a reply in its place: `stopped` when the run or its queued input was aborted (a person
 pressed Stop; the reply reads `was stopped by the user before it answered` and the sender's input says `(stopped)`),
 `failed` for anything else (a crash, a provider error, an empty answer). A message to a concluded conversation is

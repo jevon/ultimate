@@ -1129,7 +1129,8 @@ export default function subagents(
             const list = (...command: string[]) =>
               exec('git', [...command, '-z'], {
                 cwd: workspace!.path,
-                maxBuffer: 1024 * 1024,
+                // As lib/git.ts: a child that deleted a vendored tree lists tens of thousands of names.
+                maxBuffer: 64 * 1024 * 1024,
               }).then(({ stdout }) => stdout.split('\0').filter(Boolean))
             const uncommitted =
               workspace?.state === 'ready'
