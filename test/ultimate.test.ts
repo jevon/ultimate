@@ -21,8 +21,8 @@ import { fauxServer, seedTally, sourceCopy, temp, removeTemp, until, post } from
 type Server = Awaited<ReturnType<typeof fauxServer>>
 const servers: Server[] = []
 const homes: string[] = []
-// Each test runs on its own server, one at a time: run concurrently, ten full servers shared each test's 30 s
-// timeout and timed out under a loaded full suite. Close them all once the file is done.
+// Each test runs on its own server, one at a time: run concurrently on a loaded machine, ten servers starved each other
+// past the 30 s test timeout. Close them all once the file is done.
 afterAll(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()))
   for (const home of homes.splice(0)) await removeTemp(home)
