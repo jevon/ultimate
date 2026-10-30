@@ -61,7 +61,7 @@ Ask the user to choose, offering defaults. Ask only questions whose answers chan
 
 ## Review team and lander
 
-Both work without setup: the shipped `reviewer` reviews alone on the parent's model, or leads any `reviewer-*`
+Both work without setup: the shipped `reviewer` reviews alone on the review model family, or leads any `reviewer-*`
 definitions, and `workspace submit` merges and
 fast-forwards with no checks and no push. Ultimate's own clone is the working example: the `adopt-ultimate-setup` skill
 tours its `.ultimate/` and adapts the chosen pieces (models, checks, review focus) to the project.
@@ -70,8 +70,8 @@ Worker reports and submissions state divergence from the task as given (agreemen
 
 - **Review team:** agent definitions, so it can live in `<project>/.ultimate/agents/` or, for every project, in
   `~/.ultimate/agents/` (a project's file wins by name). Add one `reviewer-<name>.md` per reviewer; the shipped
-  `reviewer` then starts them all in parallel and merges their reports, so never override `reviewer` itself. Each is pinned to a different model the
-  user is logged in to and named after what it checks (`reviewer-correctness.md`, `reviewer-simplicity.md`,
+  `reviewer` then starts them all in parallel and merges their reports, so never override `reviewer` itself. Each runs on a different model the
+  user is logged in to (a model family, ⌘K Model families…, or a `model` pin) and named after what it checks (`reviewer-correctness.md`, `reviewer-simplicity.md`,
   `reviewer-architecture.md`). Details: "Review team" in
   `extensions/subagents/README.md`.
 - **Project tools or settings for a built-in agent** (@ultimate, the coordinator): never copy its definition. Add

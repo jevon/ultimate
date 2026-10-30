@@ -55,7 +55,7 @@ Click a definition in the Agents tab, or New, for its config view: description, 
 
 ## Coordinator behaviour
 
-Coordinator behaviour lives in `agents/coordinator.md`, which branches run with; the prompt section here only lists the available definitions (for agents with `subagent`, `branch` or `automation`) and, before each request, the running children. The shipped definitions are `coordinator`, `scout` (read-only reconnaissance on Luna, low thinking, no isolate), `worker` (Sol 6.1 on the fast tier, in a worktree), `designer` (UI and design work on Claude Code Opus in a worktree), `reviewer`, `lander` and `watcher` (owns one script automation; automations start it).
+Coordinator behaviour lives in `agents/coordinator.md`, which branches run with; the prompt section here only lists the available definitions (for agents with `subagent`, `branch` or `automation`) and, before each request, the running children. The shipped definitions are `coordinator`, `scout` (read-only reconnaissance on the tiny family, no isolate), `worker` (the fast family, in a worktree), `designer` (UI and design work on the design family, in a worktree), `reviewer`, `lander` and `watcher` (owns one script automation; automations start it).
 
 ### Review team
 
@@ -89,7 +89,7 @@ Verify the child's commits, then `land {id}` fast-forwards its saved source bran
 
 Isolation is by working directory, not a sandbox: absolute paths can still reach other checkouts. Children are instructed to work only in their isolate, commit clearly, and never push. There are no remote operations or cross-process landing locks.
 
-`scout`, `worker` and `designer` pin a model; the others inherit the parent's. Override one with an overlay (`addTools: []` and `model`) where that model has no login.
+Each shipped definition names a model family (`family:`); the default family runs on the parent's model. To change what an agent runs on, move it to another family or change its family's model in the Agents panel. An overlay with `addTools: []` and `model` pins one agent to one model, as the exception.
 
 The extension document `ultimate.subagents` holds the ownership/action index. Each child gets the core's `ultimate.metadata` (`host.metadata`) with `label` set to its definition's name and `title` to its task, which the shell's header, breadcrumb, and window title show. Reporter request IDs and answer receipts prevent duplicate delivery across restarts; stop records its target run so a replay cannot abort a later run. The action `definitions` returns the definitions (without instructions), the files that failed to parse with their errors, the main conversation's model, thinking level and tools, the user and project folders, and whether the project's setup is local. `definition {name}` returns the definition that applies, its source, path and raw file, the scopes with a file of that name, and a later file of that name that fails to parse. `saveDefinition {name, scope: "project" | "user", frontmatter: {description, model?, thinking?, tools?, isolate?, resident?}, instructions, create?}` validates the file as discovery reads it and writes it atomically (`create` refuses an existing name); `deleteDefinition {name, scope}` removes a user or project file.
 

@@ -22,6 +22,7 @@ import {
   compactTools,
 } from '../../web/src/sdk/registry.ts'
 import type { ExtensionLoader, PanelItem, SurfaceItem } from '../../web/src/sdk/registry.ts'
+import { attention } from '../../web/src/sdk/types.ts'
 import type { WebExtension } from '../../web/src/sdk/types.ts'
 
 const path = (name: string) => `../../extensions/${name}/web.tsx`
@@ -382,7 +383,8 @@ describe('web extension registry', () => {
     expect(compactTools(records, { id: 3, busy: false }, {}, report)).toBeUndefined()
     expect(compactTools(records, undefined, {}, report)).toBeUndefined()
     expect(report).toHaveBeenCalledWith('c', new Error('broken'))
-    const shape = 'compact must be a { when, tools?, docs?, quiet?, summary?, thread? } object'
+    const shape =
+      'compact must be a { when, tools?, docs?, quiet?, summary?, thread?, threads? } object'
     registry.replace('b', { default: { compact: { tools: ['workspace'] } } })
     expect(registry.getSnapshot()[1]?.error).toBe(shape)
     registry.replace('b', { default: { compact: { when: () => true, docs: [1] } } })
@@ -424,6 +426,36 @@ describe('web extension registry', () => {
     expect(quiet(row('boom'), {})).toBe('hidden')
     expect(report).toHaveBeenCalledWith('b', new Error('broken'))
     expect(summary).toMatchObject({ extension: 'b', component: Summary })
+  })
+
+  it('never folds a row an attention renderer draws: not background, thread, and its calls kept', async () => {
+    const registry = createRegistry()
+    await registry.setLoaders({
+      [path('a')]: async () =>
+        module({
+          compact: { when: () => true, quiet: () => true, thread: () => false },
+        }),
+      [path('b')]: async () =>
+        module({
+          entries: { 'dream.prepared': attention(component('card')), other: component('other') },
+          tools: { setup: attention(component('setup')) },
+        }),
+    })
+    const { quiet, thread, keeps } = compactTools(
+      registry.getSnapshot(),
+      { id: 1, busy: false },
+      {},
+      vi.fn(),
+    )!
+    const setup = { type: 'toolCall' as const, id: 's', name: 'setup', arguments: {} }
+    expect(quiet(row('dream.prepared'), {})).toBe(false)
+    expect(thread!(row('dream.prepared'), {})).toBe(true)
+    expect(quiet(row('other'), {})).toBe(true)
+    expect(thread!(row('other'), {})).toBe(false)
+    expect(keeps(setup, {})).toBe(true)
+    expect(thread!({ entry: { kind: 'pi.assistant' } as EntryRecord, calls: [setup] }, {})).toBe(
+      true,
+    )
   })
 
   it('keeps a call its test keeps from the root documents, and counts a throwing test as no', async () => {

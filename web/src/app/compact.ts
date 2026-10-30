@@ -1,5 +1,6 @@
 import type { AssistantMessage, ToolCall } from '@earendil-works/pi-ai'
 import type { EntryRecord } from '@earendil-works/pi-durable'
+import type { Threading } from '../sdk/types.ts'
 
 /** A transcript row: an entry, or only some content blocks of an assistant message. */
 export interface CompactPart {
@@ -294,6 +295,44 @@ export function groupBetween<Row extends object>(
   if (stretch.length) grouped.push({ between: stretch })
   return grouped
 }
+
+/**
+ * The entries a threaded transcript shows: in the main stream, those it does not hide, with a root row (of the
+ * contribution's `root` kind) after each thread's root entry; in thread `thread`, that thread's entries alone.
+ */
+export function threadStream(
+  entries: readonly EntryRecord[],
+  { root: kind, of, hidden, roots }: Threading,
+  thread: number | undefined,
+): EntryRecord[] {
+  if (thread !== undefined) return entries.filter((entry) => of.get(entry.id)?.includes(thread))
+  const rootsAt = Map.groupBy(roots, ([, entry]) => entry)
+  return entries.flatMap((entry) => {
+    // A root row is known by its thread, negated so it never takes a stored entry's id.
+    const rows = (rootsAt.get(entry.id) ?? []).map(
+      ([root]) =>
+        ({
+          id: -root,
+          conversationId: entry.conversationId,
+          kind,
+          data: { thread: root },
+        }) as unknown as EntryRecord,
+    )
+    return hidden.has(entry.id) ? rows : [entry, ...rows]
+  })
+}
+
+/**
+ * Whether a stretch between thread rows shows nothing: every row in it is a bare part that renders nothing (`hidden`).
+ * Such a stretch gets no line of its own; a line with nothing to count would be an empty chevron.
+ */
+export const emptyStretch = <Row extends object>(
+  group: BetweenGroup<Row>,
+  hidden: (part: CompactPart) => boolean,
+) =>
+  group.between.every(
+    (row) => !('work' in row || 'quiet' in row || 'aside' in row) && hidden(row as CompactPart),
+  )
 
 /** The folded run where `entry` first shows, if it starts in one: revealing the entry opens it. */
 export function runOf(rows: readonly (CompactPart | WorkRun | QuietGroup)[], entry: number) {

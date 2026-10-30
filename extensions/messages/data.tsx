@@ -195,7 +195,8 @@ export function backgroundRow(
 
 /**
  * Whether a row of @ultimate's compact transcript is the conversation itself, what the user reads: their inputs, @ultimate's
- * messages and answers to them, and setup cards they act on. Everything between two such rows recedes.
+ * messages and answers to them. Everything between two such rows recedes; cards that ask the user to act (`attention`
+ * renderers) stay out of it too.
  */
 export function threadRow(
   row: { entry: EntryRecord; calls: readonly { id: string; name: string; arguments: unknown }[] },
@@ -209,7 +210,6 @@ export function threadRow(
   if (calls.length)
     return calls.some(
       (call) =>
-        call.name === 'setup' ||
         scriptMessaged(call, log) ||
         (call.name === 'message' &&
           (call.arguments as { to?: unknown } | undefined)?.to === 'user'),

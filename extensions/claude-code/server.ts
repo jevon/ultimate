@@ -106,7 +106,27 @@ export default function claudeCode(host: ExtensionHost) {
     if (shared.closing) throw new Error('Claude Code provider is closing')
     return track(upstream.streamSimple(model, context, withEnv(options)))
   }
-  const provider = { ...upstream, stream, streamSimple }
+  // The login check sees the project's environment, as its requests do: a project the env hook moves to another Claude
+  // config folder is available when that folder is logged in, whatever the default folder says.
+  const apiKey = upstream.auth.apiKey!
+  const check: typeof apiKey.check = (input) => {
+    let extra: Record<string, string> | undefined
+    try {
+      extra = host.want(ClaudeCodeEnv)?.env(undefined)
+    } catch (error) {
+      host.notice(`Claude Code environment lookup failed, checking the default: ${String(error)}`)
+    }
+    const ctx = extra
+      ? { ...input.ctx, env: async (name: string) => extra[name] ?? input.ctx.env(name) }
+      : input.ctx
+    return apiKey.check!({ ...input, ctx })
+  }
+  const provider = {
+    ...upstream,
+    stream,
+    streamSimple,
+    auth: { ...upstream.auth, apiKey: { ...apiKey, check } },
+  }
   // Keep subscription accounting, but do not offer an in-app login for external auth.
   if (provider.auth.oauth) Reflect.deleteProperty(provider.auth.oauth, 'login')
   const facet = Symbol('claude-code')

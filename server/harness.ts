@@ -126,7 +126,8 @@ export interface HostOptions {
 export async function prepareHarness(options: HostOptions) {
   const { ultimateRoot } = options
   const projectRoot = await realpath(options.projectRoot ?? ultimateRoot)
-  const userHome = options.userHome ?? homedir()
+  // ULTIMATE_USER_HOME: where `.ultimate/` user config lives when it is not HOME's (a preview's private copy).
+  const userHome = options.userHome ?? process.env.ULTIMATE_USER_HOME ?? homedir()
   const builds = createBuild(ultimateRoot)
   const home = options.home ?? process.env.ULTIMATE_HOME ?? projectHome(projectRoot, userHome)
   await mkdir(home, { recursive: true })

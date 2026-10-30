@@ -8,6 +8,7 @@ import { cn, definePoint, getState, useDocOf, useUiState, useUltimate } from '@/
 import { RootsDoc } from './refs.ts'
 
 export {
+  AbstractAction,
   Branched,
   CompactAction,
   MemoryDoc,

@@ -6,6 +6,7 @@ export type CoreReport =
   | { type: 'log'; level: 'info' | 'warn' | 'error'; source: string; text: string }
   | { type: 'web'; state: 'preparing' | 'ready' | 'stopped' }
   | { type: 'services'; services: ServiceInfo[] }
+  | { type: 'access'; origins: string[] }
 
 export function reportCore(message: CoreReport) {
   if (process.send && process.connected) process.send(message, () => {})
@@ -13,7 +14,12 @@ export function reportCore(message: CoreReport) {
 
 /** Presentation never enters the lifecycle acknowledgement queue. */
 export function isCoreReport(message: ChildMessage): message is CoreReport {
-  return message.type === 'log' || message.type === 'web' || message.type === 'services'
+  return (
+    message.type === 'log' ||
+    message.type === 'web' ||
+    message.type === 'services' ||
+    message.type === 'access'
+  )
 }
 
 export type ChildMessage =

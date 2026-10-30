@@ -18,6 +18,7 @@ export function dashboard(logPath: string, output: NodeJS.WriteStream = process.
   let core: { generation: number; pid?: number } | undefined
   let web = 'waiting'
   let services: ServiceInfo[] = []
+  let origins: string[] = []
   let last = ''
   let logFailed = false
   let closed = false
@@ -25,7 +26,13 @@ export function dashboard(logPath: string, output: NodeJS.WriteStream = process.
     if (closed || !render) return
     render(
       [
-        `Ultimate: ${url || 'starting'}`,
+        `Ultimate: ${row(origins[0] ?? url) || 'starting'}`,
+        ...(origins.length
+          ? [
+              `  local       ${url}`,
+              ...origins.slice(1).map((origin) => `  remote      ${row(origin)}`),
+            ]
+          : []),
         `  supervisor  ${phase}`,
         `  core        ${core ? `generation ${core.generation} · PID ${core.pid ?? '?'} ` : ''}${core ? (phase === 'checking' ? 'ready' : phase) : 'waiting'}`,
         `  web         ${web} · embedded Vite`,
@@ -71,6 +78,7 @@ export function dashboard(logPath: string, output: NodeJS.WriteStream = process.
       if (child?.generation !== core?.generation || !child) {
         web = 'waiting'
         services = []
+        origins = []
       }
       core = child
       log('info', 'supervisor', value)
@@ -80,6 +88,10 @@ export function dashboard(logPath: string, output: NodeJS.WriteStream = process.
       else if (message.type === 'web') {
         web = message.state
         log('info', 'web', message.state)
+      } else if (message.type === 'access') {
+        // The core logs each change itself (`Ultimate: … (remote)`); the dashboard only keeps the current ones on top.
+        origins = message.origins
+        draw()
       } else {
         services = message.services
         log(

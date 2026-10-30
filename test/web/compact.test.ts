@@ -2,6 +2,7 @@ import type { EntryRecord } from '@earendil-works/pi-durable'
 import { describe, expect, it } from 'vitest'
 import {
   anchorSelector,
+  emptyStretch,
   compactRows,
   groupAside,
   groupBetween,
@@ -308,6 +309,23 @@ describe('quiet groups', () => {
     expect(ids.map((row) => ('between' in row ? row.between.map(({ id }) => id) : row.id))).toEqual(
       [[1], 2, [3, 4], 5, [6]],
     )
+  })
+
+  it('gives a stretch of only rows that render nothing no line, so no empty chevron shows', () => {
+    nextId = 1
+    // After a threaded turn, only a setup note was left between @ultimate's answer and the next prompt.
+    const rows = compactRows([user('go'), entry('setup.note'), user('next')], visible)
+    const [, stretch] = groupBetween(
+      rows,
+      (row) => !('work' in row) && row.entry.kind === 'pi.user',
+    )
+    const hidden = (row: CompactPart) => row.entry.kind === 'setup.note'
+    expect('between' in stretch && emptyStretch(stretch, hidden)).toBe(true)
+    const [, counted] = groupBetween(
+      compactRows([user('go'), entry('setup.note'), entry('note'), user('next')], visible),
+      (row) => !('work' in row) && row.entry.kind === 'pi.user',
+    )
+    expect('between' in counted && emptyStretch(counted, hidden)).toBe(false)
   })
 
   it('opens the run that holds an entry inside a group', () => {

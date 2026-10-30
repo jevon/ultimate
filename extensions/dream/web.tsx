@@ -1,5 +1,6 @@
 import { LibraryIcon, MoonIcon } from 'lucide-react'
 import {
+  attention,
   defineWebExtension,
   provide,
   useConversation,
@@ -129,7 +130,7 @@ function WakeUp() {
 export default defineWebExtension({
   entries: {
     'dream.requested': RequestedCard,
-    'dream.prepared': PreparedCard,
+    'dream.prepared': attention(PreparedCard),
     'dream.chapter': MorningCard,
   },
   slots: {

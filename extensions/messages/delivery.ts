@@ -64,6 +64,8 @@ export function delivery(host: ExtensionHost) {
             from: m.from,
             text: m.text,
             reply: m.reply,
+            // The question an answer answers, kept with the entry: the log it is in drops old messages.
+            ...(m.re !== undefined ? { re: m.re } : {}),
             delivery: task.input.note ? 'note' : task.input.steer ? 'steer' : 'followUp',
             ...(m.images ? { images: m.images.count } : {}),
             ...(m.remote ? { remote: m.remote } : {}),

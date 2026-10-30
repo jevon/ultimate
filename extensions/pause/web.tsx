@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   api,
+  attention,
+  Card,
   cn,
   defineWebExtension,
   formatDuration,
@@ -375,10 +377,7 @@ function Limit({ entry }: { entry: EntryRecord }) {
   if (limit.error === undefined || limit.conversationId === undefined) return null
   const conversationId = limit.conversationId
   return (
-    <section
-      className="min-w-0 rounded-md border border-border border-l-2 border-l-warning/60 bg-muted/20"
-      data-pause-limit
-    >
+    <Card attention={holding} className="border-l-warning/60" data-pause-limit>
       <header className="flex flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2 font-mono text-[11px] text-muted-foreground">
         <PauseIcon className="size-3.5 text-warning" />
         <span className="text-foreground">{limit.provider}</span>
@@ -438,7 +437,7 @@ function Limit({ entry }: { entry: EntryRecord }) {
           </span>
         )}
       </footer>
-    </section>
+    </Card>
   )
 }
 
@@ -483,7 +482,7 @@ export default defineWebExtension({
   },
   entries: {
     'pause.note': Note,
-    'pause.limit': Limit,
+    'pause.limit': attention(Limit),
     'pause.autoplay': AutoPlayedNote,
     'pause.held': Held,
   },

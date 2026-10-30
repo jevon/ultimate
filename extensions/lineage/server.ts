@@ -41,9 +41,18 @@ import { Branch, Branched, LineageApi, Rooted, Roots } from './api.ts'
 import { ConversationsApi, Trees } from '../conversations/api.ts'
 import { Standing, Started } from '../subagents/api.ts'
 import { spawn } from 'node:child_process'
-import { CompactAction, ForgetAction, OpenEditorAction, RecentAction, TallyDoc } from './refs.ts'
+import {
+  AbstractAction,
+  CompactAction,
+  ForgetAction,
+  OpenEditorAction,
+  RecentAction,
+  TallyDoc,
+} from './refs.ts'
 import {
   applyMemoryOps,
+  BODY_CHARS,
+  LINE_CHARS,
   Memorized,
   Memory,
   memoryBrief,
@@ -1182,6 +1191,38 @@ export const actions = {
     }, context)
     return withCompare(host.projectRoot, scanned.events, scanned.older)
   }),
+  /** `{id}`: branch `id`'s open abstract, else the one its newest landing froze, from its tree's tally. */
+  abstract: implementAction(AbstractAction, async (args, { host }) => {
+    const id = conversationArg(args)
+    const sha = (args as { sha?: unknown }).sha
+    if (typeof sha !== 'string' || !sha) throw new Error('Expected the landed sha')
+    const roots = await rootsOf(host, context)
+    return host.harness().commit(async (tx) => {
+      const root = await tallyRoot(tx, id, roots)
+      if (root === undefined) return null
+      let cursor: Cursor | undefined
+      do {
+        const page = await tx.scanEntries({ conversationId: root }, 100, cursor)
+        for (const entry of page.items) {
+          const data = (entry.data ?? {}) as {
+            source?: unknown
+            from?: unknown
+            sha?: unknown
+            abstract?: unknown
+          }
+          if (
+            entry.kind === 'lineage.note' &&
+            data.source === 'lander' &&
+            data.from === id &&
+            data.sha === sha
+          )
+            return data.abstract ? (data.abstract as Omit<OpenAbstract, 'anchor'>) : null
+        }
+        cursor = page.next
+      } while (cursor)
+      return null
+    }, context)
+  }),
   /** `{id, instructions?}`: compact root tally `id`, for the history footer and the palette. */
   compact: implementAction(CompactAction, async (args, { host }) => {
     const id = conversationArg(args)
@@ -1603,7 +1644,23 @@ export default function lineageExtension(host: ExtensionHost) {
           "Change a root's project memory in one atomic batch: ops are {op:'add', slug, kind: 'decision'|'fact'|'lesson', line, body, source?}, {op:'update', slug, kind?, line?, body?, source?} and {op:'delete', slug}. Slugs are kebab-case, lines one line of at most 120 characters, bodies at most 2000, source `#<conversation>/<entry>`; at most 150 memories. Any invalid op refuses the whole batch. `root` defaults to your tree's root, or outside a tree to the project's only root.",
         parameters: Type.Object({
           root: Type.Optional(Type.Integer({ minimum: 1 })),
-          ops: Type.Array(Type.Object({}, { additionalProperties: true }), { minItems: 1 }),
+          ops: Type.Array(
+            Type.Object({
+              op: Type.Union([Type.Literal('add'), Type.Literal('update'), Type.Literal('delete')]),
+              slug: Type.String(),
+              kind: Type.Optional(
+                Type.Union([
+                  Type.Literal('decision'),
+                  Type.Literal('fact'),
+                  Type.Literal('lesson'),
+                ]),
+              ),
+              line: Type.Optional(Type.String({ maxLength: LINE_CHARS })),
+              body: Type.Optional(Type.String({ maxLength: BODY_CHARS })),
+              source: Type.Optional(Type.String({ description: '#<conversation>/<entry>' })),
+            }),
+            { minItems: 1 },
+          ),
         }),
         // Not replay-safe (the default): an interrupted call is never rerun, so a batch commits at most once.
         async execute({ root, ops }, api, ctx) {

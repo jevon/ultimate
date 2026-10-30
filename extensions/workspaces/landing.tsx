@@ -72,6 +72,13 @@ export function useGithubRepo() {
  * (`review` provides it).
  */
 export const Review = definePoint<string, (() => void) | undefined>('workspaces.review')
+/**
+ * What shows under a landing report in a conversation's transcript, outside its fold, by the conversation that landed
+ * and the commit it landed (`threads` provides the feature's catch-up in @ultimate's conversation).
+ */
+export const LandingAfter = definePoint<{ from: number; sha: string }, ReactNode>(
+  'workspaces.landing-after',
+)
 
 const external = (href: string, children: ReactNode, className?: string) => (
   <a

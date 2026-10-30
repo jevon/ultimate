@@ -15,7 +15,6 @@ import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context'
 import type { ChildMessage, SupervisorMessage } from './supervisor-protocol.ts'
 
 import { alive } from './lock.ts'
-import { homedir } from 'node:os'
 import { realpath } from 'node:fs/promises'
 import { extensionModules } from './vite-extensions.ts'
 import { admit, createAccess } from './request-security.ts'
@@ -62,6 +61,8 @@ export async function prepareServer(options: Partial<ServerOptions> = {}) {
     for (const origin of remote)
       if (!origins.includes(origin)) console.log(`Ultimate: ${origin} (remote) is no longer served`)
     remote = origins
+    // The supervisor's dashboard keeps the current ones on screen; the log lines above are the history.
+    reportCore({ type: 'access', origins })
     void system
       ?.changed()
       .catch((error: unknown) => console.error('Publishing access changes failed:', error))
@@ -118,7 +119,7 @@ export async function prepareServer(options: Partial<ServerOptions> = {}) {
       allowedHosts: true,
       hmr: { server: hmr },
       fs: {
-        allow: [ultimateRoot, projectRoot, resolvePath(options.userHome ?? homedir(), '.ultimate')],
+        allow: [ultimateRoot, projectRoot, resolvePath(host.userHome, '.ultimate')],
       },
     },
     appType: 'spa',

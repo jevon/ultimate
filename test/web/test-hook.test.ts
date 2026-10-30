@@ -6,7 +6,10 @@ import { createTestHook } from '../../web/src/sdk/test-hook.ts'
 import type { ConversationSummary } from '../../shared/protocol.ts'
 import { FakeSource, fakeSubscriptions } from './fake-source.ts'
 
-beforeEach(() => vi.useFakeTimers())
+beforeEach(() => {
+  vi.useFakeTimers()
+  sessionStorage.clear()
+})
 afterEach(() => vi.useRealTimers())
 
 function setup() {
@@ -59,6 +62,22 @@ it('until idle waits for the sent turn, not the idle state before it starts', as
   expect(done).toBe(false)
   list(false)
   expect(await waiting).toEqual({ conversation: 1 })
+})
+
+it('a page reloaded after a send still waits for the sent turn, without sending again', async () => {
+  const first = setup()
+  await first.hook.send('hello')
+  // The reload: a new store and hook, with only sessionStorage carried over.
+  const { hook, list, fetch } = setup()
+  let done = false
+  const waiting = hook.until('idle').then(() => (done = true))
+  list(false)
+  await vi.advanceTimersByTimeAsync(10)
+  expect(done).toBe(false)
+  list(true)
+  list(false)
+  await waiting
+  expect(fetch).not.toHaveBeenCalledWith('/api/conversations/1/submit', expect.anything())
 })
 
 it('until idle counts a turn too short to show busy by its answer, and times out naming what is busy', async () => {

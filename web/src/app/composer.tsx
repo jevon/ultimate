@@ -14,6 +14,7 @@ import {
 import { Kbd } from '@/components/ui/kbd'
 import { api } from '../sdk/client.ts'
 import { ConversationIdContext } from '../sdk/conversation-scope.tsx'
+import { ThreadContext } from '../sdk/thread.ts'
 import { errorMessage } from '../sdk/format.ts'
 import { events } from '../sdk/events.ts'
 import {
@@ -259,7 +260,9 @@ function ConversationComposer({ dock }: { dock?: boolean }) {
   const scoped = useContext(ConversationIdContext)
   const target = useContext(ComposerTargetContext)
   const intro = useIntro()
-  const draft = getDraft(id)
+  // A thread's composer keeps its own draft beside the main stream's.
+  const thread = useContext(ThreadContext)
+  const draft = getDraft(thread === undefined ? id : `${id}.thread.${thread}`)
   const { text, images, error, sending } = useSyncExternalStore(draft.subscribe, draft.get)
   const setError = (message: string | undefined) => draft.set({ error: message })
   const setImages = (change: (images: Draft['images']) => Draft['images']) =>
@@ -377,7 +380,13 @@ function ConversationComposer({ dock }: { dock?: boolean }) {
           autoFocus={!touchKeyboard()}
           readOnly={loading || sending}
           onPaste={(event) => void paste(event)}
-          id={scoped === undefined ? 'composer-input' : `composer-input-${scoped}`}
+          id={
+            thread !== undefined
+              ? `composer-input-thread-${thread}`
+              : scoped === undefined
+                ? 'composer-input'
+                : `composer-input-${scoped}`
+          }
           data-conversation={id}
           onChange={(event) => update(event.target.value)}
           onKeyDown={onKeyDown}

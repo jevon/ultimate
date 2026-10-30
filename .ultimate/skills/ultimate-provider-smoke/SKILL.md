@@ -43,7 +43,7 @@ to that conversation explicitly. A send without `conversation` targets conversat
 
 ```json
 {"url": "http://127.0.0.1:4799/?conversation=<id>", "steps": [
-  {"wait": 2000},
+  {"until": "idle", "conversation": <id>},
   {"send": "Reply with exactly the word: pong. Do not call any tools.", "conversation": <id>},
   {"until": "idle", "conversation": <id>, "timeoutMs": 180000}
 ], "screenshot": true}

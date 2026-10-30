@@ -60,7 +60,10 @@ export const hasLogin = (available: readonly Listed[], ref: ModelRef | undefined
 
 /**
  * The model a conversation runs on when nothing pins one: a preview's, else the default family's (`family`), else
- * Pi's default, else the first model with a login here; each only when it has a login. Undefined while none has one.
+ * Pi's default, the first of them with a login here. When none has one, the first configured one all the same: its
+ * login is gone, and the fallback card asks the user, rather than a model nobody chose (rog, 2026-10-29: a logged-out
+ * Claude Code default started a branch on a paid Anthropic key). Only with nothing configured, the first model with a
+ * login. Undefined while none has one.
  */
 export function defaultModel(
   available: readonly Listed[],
@@ -70,9 +73,21 @@ export function defaultModel(
   const first = available[0]
   return (
     configuredModel(available, settings, family) ??
+    configured(settings, family)[0] ??
     (first && { provider: first.provider, modelId: first.id })
   )
 }
+
+/** A preview's model, the default family's and Pi's default, those that name one, in that order. */
+const configured = (
+  settings: Pick<SettingsManager, 'getDefaultProvider' | 'getDefaultModel'>,
+  family?: ModelRef,
+) =>
+  [
+    previewModel(),
+    family,
+    { provider: settings.getDefaultProvider(), modelId: settings.getDefaultModel() },
+  ].filter((ref): ref is ModelRef => !!ref?.provider && !!ref.modelId)
 
 /**
  * A preview's model, else the default family's (`family`), else Pi's default, each only when it has a login here:
@@ -83,13 +98,7 @@ export function configuredModel(
   settings: Pick<SettingsManager, 'getDefaultProvider' | 'getDefaultModel'>,
   family?: ModelRef,
 ): ModelRef | undefined {
-  const configured = {
-    provider: settings.getDefaultProvider(),
-    modelId: settings.getDefaultModel(),
-  }
-  for (const ref of [previewModel(), family, configured])
-    if (ref?.provider && ref.modelId && hasLogin(available, ref as ModelRef)) return ref as ModelRef
-  return undefined
+  return configured(settings, family).find((ref) => hasLogin(available, ref))
 }
 
 type DefaultHost = {

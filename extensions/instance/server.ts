@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import {
+  cp,
   mkdtemp,
   mkdir,
   readFile,
@@ -7,6 +8,7 @@ import {
   rename,
   rm,
   stat,
+  symlink,
   unlink,
   writeFile,
 } from 'node:fs/promises'
@@ -76,9 +78,46 @@ export async function previewModelSetting(
   return DEFAULT_PREVIEW_MODEL
 }
 
+/** What a preview's private user config starts as: copies, symlinks resolved, so its writes never reach the real files. */
+const COPIED = [
+  'settings.json',
+  'model-families.json',
+  'trust.json',
+  'onboarding.json',
+  'secrets.json',
+  'claude-accounts.json',
+  'agents',
+  'skills',
+]
 /**
- * A preview keeps ordinary parent variables, but gets its own host identity, no inherited cloud settings, and
- * `ULTIMATE_MODEL` only when `model` is set.
+ * Shared with the host through a link: user extensions are code the UI never writes (and some find their repository
+ * through their real path), and the Tailscale registry is how every server on the machine picks a distinct port.
+ */
+const LINKED = ['extensions', 'tailscale.json']
+
+/** Seed `<to>/.ultimate` from the user's `<from>/.ultimate`; what the user has not got is left out. */
+export async function seedUserHome(from: string, to: string) {
+  const source = join(from, '.ultimate')
+  const target = join(to, '.ultimate')
+  await mkdir(target, { recursive: true, mode: 0o700 })
+  const missing = (error: NodeJS.ErrnoException) => {
+    if (error.code !== 'ENOENT') throw error
+  }
+  for (const name of COPIED)
+    await cp(join(source, name), join(target, name), {
+      recursive: true,
+      dereference: true,
+      errorOnExist: true,
+      force: false,
+    }).catch(missing)
+  // Linked even when missing: the first server to register creates the one registry every server shares.
+  for (const name of LINKED) await symlink(join(source, name), join(target, name))
+}
+
+/**
+ * A preview keeps ordinary parent variables and HOME (provider logins, the pnpm store, browsers), but gets its own
+ * host identity, its own user config (`ULTIMATE_USER_HOME`), no inherited cloud settings, and `ULTIMATE_MODEL` only
+ * when `model` is set.
  */
 export function previewEnv(
   parent: NodeJS.ProcessEnv,
@@ -94,6 +133,7 @@ export function previewEnv(
             'ULTIMATE_GENERATION',
             'ULTIMATE_PREVIOUS_BUILD',
             'ULTIMATE_HOME',
+            'ULTIMATE_USER_HOME',
             'ULTIMATE_PORT',
             'ULTIMATE_CLOUD_URL',
             'ULTIMATE_CLOUD_TOKEN',
@@ -104,7 +144,7 @@ export function previewEnv(
     ),
     ULTIMATE_HOME: options.home,
     ULTIMATE_PROJECT: options.project,
-    HOME: options.userHome,
+    ULTIMATE_USER_HOME: options.userHome,
     ULTIMATE_PORT: '0',
     ULTIMATE_NO_OPEN: '1',
     ULTIMATE_INSTANCE_OWNER: String(options.ownerPid),
@@ -342,10 +382,13 @@ export default function instanceExtension(
       context.abortSignal?.throwIfAborted()
       // Explicit homes are retained even when their name matches the automatic sweep's prefix.
       if (args.home) await writeFile(join(home, 'instance-preserve'), '')
+      const userHome = join(home, 'user')
+      // A restarted explicit home keeps the config its preview changed.
+      if (!existsSync(userHome)) await seedUserHome(host.userHome, userHome)
       const env = previewEnv(process.env, {
         home,
         project,
-        userHome: host.userHome,
+        userHome,
         ownerPid: process.pid,
         model: await previewModelSetting(host),
       })

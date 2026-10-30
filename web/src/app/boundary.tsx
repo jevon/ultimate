@@ -1,24 +1,88 @@
 import { cn } from 'cn'
-import { PuzzleIcon, TriangleAlertIcon } from 'lucide-react'
+import { MessageSquareShareIcon, PuzzleIcon, TriangleAlertIcon } from 'lucide-react'
 import { Component, Fragment, useContext } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
+import type { SystemInfo } from '../../../shared/protocol.ts'
 import { errorMessage, shortenPath } from '../sdk/format.ts'
 import { ExtensionNameContext, useExtensions, useSystem } from '../sdk/hooks.ts'
 import { provisionOf, provisionsOf, slotItems } from '../sdk/registry.ts'
+import { ErrorReport } from '../sdk/types.ts'
 import type { Point, SlotName } from '../sdk/types.ts'
 
-/** A compact card naming the extension that failed. `inline` fits a status line or toolbar. */
+/** Frames of a stack an error report keeps, after dropping dependencies (React, Vite's prebundles) and bare elements. */
+const STACK_LINES = 8
+
+/** Where an extension lives: `extensions/…` in the clone, `~/.ultimate/…` or the project's `.ultimate/…` otherwise. */
+function extensionPath(system: SystemInfo | undefined, name: string, file = '') {
+  const info = system?.extensions.find((extension) => extension.name === name)
+  if (!info) return `extensions/${name}${file}`
+  return shortenPath(`${info.path}${file}`, {
+    cwd: info.source === 'builtin' ? system?.code.ultimateRoot : system?.project.root,
+    home: system?.machine.home,
+  })
+}
+
+/** A thrown error's frames: V8 starts its stack with `Name: message`, which the report already holds. */
+export function stackFrames(error: unknown) {
+  return error instanceof Error ? error.stack?.replace(String(error), '').trim() : undefined
+}
+
+/**
+ * A stack frame with short paths: Vite's URL loses its origin and `?t=` stamp, a file served by `/@fs/` reads as
+ * `shortenPath` shows it, and one under the web root as `src/…`.
+ */
+function shortFrame(system: SystemInfo | undefined, line: string) {
+  return line.replace(/https?:\/\/[^/\s]+(\/@fs)?\/([^?:\s)]*)(\?[^:\s)]*)?/g, (_, fs, path) =>
+    fs
+      ? shortenPath(`/${path}`, { cwd: system?.code.ultimateRoot, home: system?.machine.home })
+      : path,
+  )
+}
+
+/** What an error card hands over for debugging: the failure, where it lives, its stack and the running build. */
+export function errorReport(
+  system: SystemInfo | undefined,
+  failure: { extension: string; error: string; context: string; stack?: string },
+) {
+  const source = system?.extensions.find((info) => info.name === failure.extension)?.source
+  const frames = failure.stack
+    ?.split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !/\/(node_modules|deps)\/|\(<anonymous>\)$/.test(line))
+    .map((line) => shortFrame(system, line))
+  const stack = frames && [...new Set(frames)].slice(0, STACK_LINES).join('\n')
+  const build = system && `${system.build.id} · gen ${system.build.generation}`
+  return [
+    `Extension \`${failure.extension}\` failed: ${failure.context}.`,
+    `Path: ${extensionPath(system, failure.extension)}${source ? ` (${source})` : ''}`,
+    `Error: ${failure.error}`,
+    stack && `Stack:\n\`\`\`\n${stack}\n\`\`\``,
+    build && `Build: ${build}`,
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
+/**
+ * A compact card naming the extension that failed. `inline` fits a status line or toolbar. A block card offers its
+ * report (`context` says what failed, `stack` where) to whatever provides `ErrorReport`.
+ */
 export function ErrorCard({
   extension,
   error,
+  context = 'a component threw',
+  stack,
   variant = 'block',
   className,
 }: {
   extension: string
   error: string
+  context?: string
+  stack?: string
   variant?: 'inline' | 'block'
   className?: string
 }) {
+  const system = useSystem()
   if (variant === 'inline')
     return (
       <span
@@ -45,8 +109,27 @@ export function ErrorCard({
     >
       <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-error" />
       <div className="min-w-0 flex-1">
-        <div className="text-error">
-          extension <span className="font-semibold">{extension}</span> failed
+        <div className="flex items-center gap-2 text-error">
+          <span className="min-w-0 flex-1">
+            extension <span className="font-semibold">{extension}</span> failed
+          </span>
+          <Provided input={null} point={ErrorReport}>
+            {(report) =>
+              report && (
+                <button
+                  aria-label={report.title}
+                  className="-my-0.5 shrink-0 cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() =>
+                    report.send(errorReport(system, { extension, error, context, stack }))
+                  }
+                  title={report.title}
+                  type="button"
+                >
+                  <MessageSquareShareIcon className="size-3.5" />
+                </button>
+              )
+            }
+          </Provided>
         </div>
         <div className="mt-0.5 max-h-48 overflow-auto whitespace-pre text-muted-foreground">
           {error}
@@ -70,20 +153,27 @@ export class ExtensionBoundary extends Component<
     fallback?: ReactNode
     children: ReactNode
   },
-  { error?: string; version: number }
+  { error?: string; stack?: string; version: number }
 > {
-  state: { error?: string; version: number } = { version: this.props.version }
+  state: { error?: string; stack?: string; version: number } = { version: this.props.version }
   static getDerivedStateFromError(error: unknown) {
-    return { error: errorMessage(error) }
+    return { error: errorMessage(error), stack: undefined }
   }
   static getDerivedStateFromProps(
     props: { version: number },
     state: { error?: string; version: number },
   ) {
-    return props.version === state.version ? null : { error: undefined, version: props.version }
+    return props.version === state.version
+      ? null
+      : { error: undefined, stack: undefined, version: props.version }
   }
   componentDidCatch(error: unknown, info: ErrorInfo) {
     console.error(`[extension ${this.props.extension}]`, error, info.componentStack)
+    // The component stack names the extension's components; the JS stack, where in them it threw.
+    const thrown = stackFrames(error)
+    this.setState({
+      stack: [thrown, info.componentStack?.trim()].filter(Boolean).join('\n') || undefined,
+    })
   }
   render() {
     if (this.state.error === undefined)
@@ -97,6 +187,7 @@ export class ExtensionBoundary extends Component<
         <ErrorCard
           extension={this.props.extension}
           error={this.state.error}
+          stack={this.state.stack}
           variant={this.props.variant}
         />
         {this.props.fallback}
@@ -227,15 +318,6 @@ export function ExtensionErrors() {
   const failed = useExtensions().filter((record) => record.error !== undefined)
   const system = useSystem()
   if (failed.length === 0) return null
-  /** Where the facet lives: `extensions/…` in the clone, `~/.ultimate/…` or the project's `.ultimate/…` otherwise. */
-  const facet = (name: string) => {
-    const info = system?.extensions.find((extension) => extension.name === name)
-    if (!info) return `extensions/${name}/web.tsx`
-    return shortenPath(`${info.path}/web.tsx`, {
-      cwd: info.source === 'builtin' ? system?.code.ultimateRoot : system?.project.root,
-      home: system?.machine.home,
-    })
-  }
   return (
     <div className="pointer-events-none fixed right-3 bottom-10 z-40 flex w-96 max-w-[calc(100vw-1.5rem)] flex-col gap-2">
       {failed.map((record) => (
@@ -245,12 +327,17 @@ export function ExtensionErrors() {
         >
           <ErrorCard
             className="border-none bg-transparent"
+            context={
+              record.extension
+                ? 'web.tsx did not reload; the previous version is still running'
+                : 'web.tsx did not load'
+            }
             error={record.error ?? ''}
             extension={record.name}
           />
           <div className="flex items-center gap-1.5 px-2.5 pb-2 font-mono text-[10.5px] text-muted-foreground/80">
             <PuzzleIcon className="size-3" />
-            {facet(record.name)}
+            {extensionPath(system, record.name, '/web.tsx')}
             {record.extension ? ' · previous version still running' : ' · not loaded'}
           </div>
         </div>

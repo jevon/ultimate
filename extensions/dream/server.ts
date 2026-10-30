@@ -94,11 +94,27 @@ export function toolStats(database: string, enabled: readonly string[]): ToolSta
         )
         .all() as { name: string; calls: number; failed: number; avgMs: number }[]
     ).map((row) => ({ ...row, avgMs: Math.round(row.avgMs) }))
-    const errors = db
+    const groups = db
       .prepare(
         "SELECT name, substr(error, 1, 160) AS error, count(*) AS count FROM calls WHERE kind = 'tool' AND ok = 0 GROUP BY name, substr(error, 1, 160) ORDER BY count DESC LIMIT 20",
       )
       .all() as { name: string; error: string; count: number }[]
+    const sample = db.prepare(
+      "SELECT conversation, entry, substr(args, 1, 120) AS args FROM calls WHERE kind = 'tool' AND ok = 0 AND name = ? AND substr(error, 1, 160) = ? ORDER BY at DESC LIMIT 2",
+    )
+    const errors = groups.map((group) => ({
+      ...group,
+      examples: (
+        sample.all(group.name, group.error) as {
+          conversation: number | null
+          entry: number | null
+          args: string | null
+        }[]
+      ).map((row) => ({
+        at: `#${row.conversation ?? '?'}${row.entry === null ? '' : `/${row.entry}`}`,
+        args: row.args ?? '',
+      })),
+    }))
     const used = new Set(tools.map((tool) => tool.name))
     return {
       ...(window.since === null ? {} : { since: window.since }),

@@ -75,6 +75,7 @@ export function ModelRow({
         </span>
       )}
       <span className="ml-auto flex shrink-0 items-center gap-3 pl-3 text-[11px] text-muted-foreground tabular-nums">
+        {model.provider === 'anthropic' && <span className="text-warning/80">paid API</span>}
         {model.reasoning ? (
           <span
             className="flex items-center gap-1"
@@ -113,9 +114,15 @@ export function ModelPicker() {
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
     const all = models?.models ?? []
     // Without a query: what can run now. With one: everything that matches, runnable and direct matches first
-    // (`claude-opus-4-8` before a reseller's `eu.anthropic.claude-opus-4-8`).
+    // (`claude-opus-4-8` before a reseller's `eu.anthropic.claude-opus-4-8`). A Claude model Claude Code also offers
+    // lists it before the paid Anthropic API even while logged out, so Enter never picks the paid one by accident.
+    const claude = new Set(
+      all.filter((model) => model.provider === 'claude-code').map((model) => model.id),
+    )
+    const twin = (model: ModelInfo) => claude.has(model.id)
     const rank = (model: ModelInfo) =>
-      (model.available ? 0 : 2) +
+      (model.available || (model.provider === 'claude-code' && terms.length) ? 0 : 2) +
+      (model.provider === 'anthropic' && twin(model) ? 0.5 : 0) +
       (terms.length && !model.id.toLowerCase().startsWith(terms[0]) ? 1 : 0)
     const found = (
       terms.length

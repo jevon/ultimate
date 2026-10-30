@@ -20,8 +20,8 @@ import type { MemoryItem } from './refs.ts'
 export const MEMORY_LIMIT = 150
 const SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/
 const KINDS = ['decision', 'fact', 'lesson'] as const
-const LINE_CHARS = 120
-const BODY_CHARS = 2000
+export const LINE_CHARS = 120
+export const BODY_CHARS = 2000
 
 /** A root's project memory. A fork starts empty: memories live on roots only. */
 export const Memory = defineDoc<{ memories: Record<string, MemoryItem> }>({

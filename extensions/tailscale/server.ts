@@ -8,7 +8,7 @@ import { constants, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { defineExtension } from '@earendil-works/pi-durable'
 import { exec } from '../../lib/exec.ts'
-import { readJson, writeJson } from '../../lib/json-file.ts'
+import { readJson, writeJson, writeTarget } from '../../lib/json-file.ts'
 import { userSettingsPath } from '../../lib/settings.ts'
 import type { ExtensionHost } from '../../server/extensions.ts'
 import type { ExtensionAction } from '../../server/actions.ts'
@@ -84,19 +84,19 @@ export default function tailscale(host: ExtensionHost) {
   }
   async function withRegistry<T>(use: (value: { ports: Record<string, Entry> }) => Promise<T>) {
     await mkdir(join(host.userHome, '.ultimate'), { recursive: true })
-    const lock = await acquireLock(registryPath + '.lock', { pid: process.pid }, 120000).catch(
-      (error) => {
-        if (
-          error instanceof Error &&
-          error.message.startsWith('Ultimate core already owns this storage')
+    // Lock beside the file itself: a preview's registry links to the host's, and both must take one lock.
+    const locked = (await writeTarget(registryPath)) + '.lock'
+    const lock = await acquireLock(locked, { pid: process.pid }, 120000).catch((error) => {
+      if (
+        error instanceof Error &&
+        error.message.startsWith('Ultimate core already owns this storage')
+      )
+        throw new Error(
+          `Tailscale port registry is busy (${registryPath}); wait for the current instance to finish and retry. Dead owners are recovered automatically.`,
+          { cause: error },
         )
-          throw new Error(
-            `Tailscale port registry is busy (${registryPath}); wait for the current instance to finish and retry. Dead owners are recovered automatically.`,
-            { cause: error },
-          )
-        throw error
-      },
-    )
+      throw error
+    })
     try {
       const value = await readJson<{ ports: Record<string, Entry> }>(registryPath, { ports: {} })
       if (

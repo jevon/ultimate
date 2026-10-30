@@ -101,7 +101,6 @@ export default defineWebExtension({
       'message',
       'branch',
       'workspace',
-      'setup',
       // A script that messaged you stays visible, so its messages show as bubbles, even when it was interrupted.
       (call, docs) => scriptMessaged(call, docs.board as MessagesData | null | undefined),
     ],

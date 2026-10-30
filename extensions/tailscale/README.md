@@ -15,7 +15,7 @@ Omit `tailscale.allow` to allow only the machine owner's login (`Self.UserID` �
 
 ## UI
 
-The server logs the HTTPS URL when it is registered (`Ultimate: https://… (remote)`) and when it is no longer served, so the terminal and `supervisor.log` show where Ultimate is reachable.
+The server logs the HTTPS URL when it is registered (`Ultimate: https://… (remote)`) and when it is no longer served, so the terminal and `supervisor.log` show where Ultimate is reachable. The supervisor dashboard keeps the current one at its top, with the localhost URL underneath; disabling the extension removes it from the dashboard.
 
 The status line's `tailnet` indicator opens a popover with the `status` action, read on load and again when system info changes: a registered origin, a failure notice, or a reinstall. The indicator shows a green dot while ready and an amber one while a problem needs a fix; off or starting it stays out of the line, and the palette's `Tailscale…` opens the popover in its place.
 

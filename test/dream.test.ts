@@ -265,13 +265,24 @@ it('reads tool numbers from the trace, with unused tools and frequent errors', a
   const file = join(await temp(), 'trace.sqlite')
   const db = new DatabaseSync(file)
   db.exec(
-    'CREATE TABLE calls (id TEXT, at REAL, ms REAL, kind TEXT, name TEXT, ok INTEGER, error TEXT)',
+    'CREATE TABLE calls (id TEXT, at REAL, ms REAL, kind TEXT, name TEXT, ok INTEGER, error TEXT, args TEXT, conversation INTEGER, entry INTEGER)',
   )
-  const insert = db.prepare('INSERT INTO calls VALUES (?, ?, ?, ?, ?, ?, ?)')
-  insert.run('1', 100, 10, 'tool', 'edit', 1, null)
-  insert.run('2', 200, 30, 'tool', 'edit', 0, 'Could not find the exact text')
-  insert.run('3', 300, 5, 'tool', 'read', 1, null)
-  insert.run('4', 50, 5, 'action', 'dream/stats', 1, null)
+  const insert = db.prepare('INSERT INTO calls VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+  insert.run('1', 100, 10, 'tool', 'edit', 1, null, null, null, null)
+  insert.run(
+    '2',
+    200,
+    30,
+    'tool',
+    'edit',
+    0,
+    'Could not find the exact text',
+    '{"path":"a.ts"}',
+    7,
+    42,
+  )
+  insert.run('3', 300, 5, 'tool', 'read', 1, null, null, null, null)
+  insert.run('4', 50, 5, 'action', 'dream/stats', 1, null, null, null, null)
   db.close()
   expect(toolStats(file, ['edit', 'read', 'notify'])).toEqual({
     since: 100,
@@ -281,7 +292,14 @@ it('reads tool numbers from the trace, with unused tools and frequent errors', a
       { name: 'read', calls: 1, failed: 0, avgMs: 5 },
     ],
     unused: ['notify'],
-    errors: [{ name: 'edit', error: 'Could not find the exact text', count: 1 }],
+    errors: [
+      {
+        name: 'edit',
+        error: 'Could not find the exact text',
+        count: 1,
+        examples: [{ at: '#7/42', args: '{"path":"a.ts"}' }],
+      },
+    ],
   })
   expect(toolStats(join(await temp(), 'none.sqlite'), ['read']).unused).toEqual(['read'])
 })
