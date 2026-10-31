@@ -44,7 +44,7 @@ export async function resolveImages(
   tx: Tx,
   from: ConversationId,
   ref: ImagesRef,
-  sender: ConversationId = from,
+  sender: ConversationId,
 ) {
   let entry: EntryRecord | undefined
   if (ref === 'latest') {
@@ -89,12 +89,12 @@ export async function resolveImages(
       Buffer.byteLength(image.data, 'base64') > maxImageBytes
     )
       throw new Error(`images: entry ${entry.id} has an unsupported image or one over 2 MiB`)
-  return { entry: entry.id, count: images.length }
+  return { entry: entry.id, conversation: entry.conversationId, count: images.length }
 }
 /**
  * The images of entry `id` as model content, each after a caption naming where it came from: its conversation, the
- * tool call whose result holds it (`screenshot url=/x`) or an input, and its place ("Image 2 of 3"). The recipient can check that an
- * image is the one the text describes before passing it on. Entries never change, so a replay gets the same content.
+ * tool call whose result holds it (`screenshot url=/x`) or an input, and its place ("Image 2 of 3"). The recipient
+ * can check that an image is the one the text describes before passing it on. Entries never change, so a replay gets the same content.
  */
 export async function forwarded(tx: Tx, id: EntryId) {
   const entry = await tx.entry(id)

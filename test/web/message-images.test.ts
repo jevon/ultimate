@@ -29,7 +29,7 @@ vi.mock('@/sdk', async () => ({
   useConversations: () => [],
   useDocOf: () => undefined,
   useNow: () => 0,
-  useTranscript: () => [shot],
+  useTranscript: () => [shot, { ...shot, id: 12, conversationId: 70 }],
 }))
 vi.mock('@/components/ai/message', () => ({ MessageResponse: () => null }))
 vi.mock('../../extensions/workspaces/ui.tsx', () => ({
@@ -52,4 +52,21 @@ it("shows the images @ultimate's message to you carries, as thumbnails that open
   )
   expect(html).toContain('src="data:image/png;base64,AAAA"')
   expect(html).toContain('cursor-zoom-in')
+})
+
+it("shows a branch's screenshot that @ultimate forwarded, from the branch's conversation", () => {
+  const message = {
+    id: 2,
+    from: 43,
+    to: 'user',
+    text: 'The sheet',
+    at: 0,
+    reply: false,
+    state: 'delivered',
+    images: { entry: 12, conversation: 70, count: 1 },
+  } as Message
+  const html = renderToStaticMarkup(
+    createElement(Bubble, { from: 43, message, text: 'The sheet', running: false }),
+  )
+  expect(html).toContain('src="data:image/png;base64,AAAA"')
 })

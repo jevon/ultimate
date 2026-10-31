@@ -57,8 +57,11 @@ export type Message = {
   error?: string
   /** The tool call that sent it: `message`'s own id, or `<script>/<n>` for a nested codemode call. */
   call?: string
-  /** Images forwarded with it: the sender's entry that holds them, attached to the recipient's input on delivery. */
-  images?: { entry: number; count: number }
+  /**
+   * Images forwarded with it: the entry that holds them and its conversation (the sender's or one of its tree; absent on
+   * older messages, which forwarded only the sender's), attached to the recipient's input on delivery.
+   */
+  images?: { entry: number; conversation?: number; count: number }
   /** A branch's final answer routed to its starter after it stopped with nothing under way: it awaits the starter. */
   report?: true
   /** Sent to a busy recipient: waiting in its queue to steer its run or as a follow-up after it; cleared once placed. */

@@ -4,7 +4,7 @@
  */
 import type { Context } from '@earendil-works/chord'
 import { defineDoc } from '@earendil-works/pi-durable'
-import type { EntryId } from '@earendil-works/pi-durable'
+import type { ConversationId, EntryId } from '@earendil-works/pi-durable'
 import { defineApi } from '../../shared/extension-api.ts'
 import type { Device } from '../../shared/events.ts'
 import { MessagesDoc } from './refs.ts'
@@ -28,8 +28,8 @@ export type Message = {
   error?: string
   /** The tool call that sent it: `message`'s or `branch`'s own id, `<script>/<n>` for a nested codemode call. */
   call?: string
-  /** Images forwarded with it: the sender's entry that holds them, attached to the recipient's input on delivery. */
-  images?: { entry: EntryId; count: number }
+  /** Images forwarded with it: the entry that holds them and its conversation, attached to the recipient's input. */
+  images?: { entry: EntryId; conversation?: ConversationId; count: number }
   /** A branch's final answer routed to its starter after it stopped with nothing under way: it awaits the starter. */
   report?: true
   /** Sent to a busy recipient: waiting in its queue to steer its run or as a follow-up after it; cleared once placed. */

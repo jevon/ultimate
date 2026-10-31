@@ -110,6 +110,9 @@ it('shows events, reactor failures, the catalogue and a trace tree, within limit
   expect(catalogue).toContain('absent  provider=MISSING  needs: alpha')
   expect(catalogue.slice(-2)).toEqual(['missing: absent', 'cycles: none'])
 
+  const first = server.extensions.trace.query().find((row) => row.name === 'alpha/go')!
+  // Each later event's commit retries the first event, whose reactor runs join the first trace.
+  await until(() => server.extensions.trace.query({ trace: first.trace }).length >= 5)
   // Rows newest first, limited; a trace id gives the whole chain, indented under its parents.
   const rows = (await debug({ call: 'trace', conversation: 1, limit: 2 })).split('\n')
   const older = rows.pop()!
@@ -121,9 +124,6 @@ it('shows events, reactor failures, the catalogue and a trace tree, within limit
   expect(older).toBe(`Older calls: before=${second.id}`)
   const next = await debug({ call: 'trace', conversation: 1, before: second.id, limit: 1 })
   expect(next.split('\n').at(-1)).toBe(`Older calls: before=${third.id}`)
-  const first = server.extensions.trace.query().find((row) => row.name === 'alpha/go')!
-  // Each later event's commit retries the first event, whose reactor runs join the first trace.
-  await until(() => server.extensions.trace.query({ trace: first.trace }).length >= 5)
   const tree = (await debug({ call: 'trace', trace: first.trace })).split('\n')
   expect(tree.slice(0, 3)).toEqual([
     expect.stringMatching(/^action {2}ui → alpha\/go {2}\d+ms {2}ok {2}args=\{"n":1\}$/),

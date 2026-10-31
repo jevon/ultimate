@@ -1401,7 +1401,7 @@ it('forwards tool-result images, finds latest past a page, and checks every imag
   // The reply reaches the sender before the next send, so it does not steer into that send's run.
   await until(async () => (await f.log())?.messages[1]?.state === 'delivered')
   const message = (await f.log())!.messages[0]
-  expect(message.images).toEqual({ entry: shot, count: 1 })
+  expect(message.images).toEqual({ entry: shot, conversation: 1, count: 1 })
   expect(imagesIn(await placed(f, f.recipient.id, message.id))).toEqual([png(7)])
   // Twice a forwarded image was not the one the text described, and @ultimate relayed it to the user unchecked.
   expect(captionsIn(await placed(f, f.recipient.id, message.id))).toEqual([
@@ -1456,7 +1456,7 @@ it("forwards a screenshot from a branch the sender started, captioned with the b
   }, context)
   await f.send('user', 'The sheet', { images: shot })
   expect((await f.log())!.messages).toMatchObject([
-    { from: 1, to: 'user', images: { entry: shot, count: 1 } },
+    { from: 1, to: 'user', images: { entry: shot, conversation: branch.id, count: 1 } },
   ])
   const content = await f.opened.harness.commit((tx) => forwarded(tx, shot), context)
   expect(content[0]).toEqual({

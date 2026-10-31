@@ -237,7 +237,12 @@ export function Bubble({
         )}
       </div>
       <div className="mt-3 overflow-hidden rounded-lg border border-border/70 bg-card/60 empty:hidden [&>:first-child]:border-t-0">
-        {message?.images && <MessageImages conversation={from} entry={message.images.entry} />}
+        {message?.images && (
+          <MessageImages
+            conversation={message.images.conversation ?? from}
+            entry={message.images.entry}
+          />
+        )}
         {children}
         {answer && <AttachedAnswer answer={answer} question={message!} />}
         {(shown || message?.error) && (
@@ -758,8 +763,8 @@ const imageCount = (count: number) => `${count} image${count === 1 ? '' : 's'}`
 const InputImages = ({ entry }: { entry: EntryRecord }) => <Thumbnails images={imagesOf(entry)} />
 
 /**
- * The images a message to you carries: they stay in the sender's entry `entry` (a screenshot, a pasted input), read from
- * the loaded transcript or else fetched from its stored history.
+ * The images a message to you carries: they stay in entry `entry` of `conversation`, the sender's or one of its tree (a
+ * screenshot, a pasted input), read from the loaded transcript or else fetched from its stored history.
  */
 function MessageImages({ conversation, entry }: { conversation: number; entry: number }) {
   const loaded = useTranscript().find(

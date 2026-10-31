@@ -436,6 +436,7 @@ CREATE INDEX IF NOT EXISTS calls_at ON calls (at);`)
         if (since !== undefined) where.push({ sql: 'at > ?', values: [since] })
         if (query.before !== undefined) {
           flush()
+          if (!database) return []
           // A call id first: a lenient date parse would read some ids as times.
           const call = database
             ?.prepare('SELECT at, rowid FROM calls WHERE id = ?')
