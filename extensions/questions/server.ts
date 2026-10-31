@@ -26,13 +26,26 @@ function checkAnswers(answers: { question: string }[], questions: Question[]) {
   )
     throw new Error('Unknown question')
 }
-/** The keys of the chosen options, in option order: "a", "a,c"; none when an answer names no option. */
+/**
+ * The keys of the chosen options, in option order: "a", "a,c"; none when an answer names no option or one without a
+ * key. A multi answer is its labels in option order joined by ", ", which labels may hold too: it names options only
+ * when exactly one reading of it does.
+ */
 function keysOf(question: Question, answer: string) {
-  const labels = question.kind === 'multi' ? answer.split(', ') : [answer]
-  const keys = (question.options ?? []).flatMap((o) =>
-    o.key && labels.includes(o.label) ? [o.key] : [],
-  )
-  return keys.length === labels.length ? keys.join(',') : ''
+  const options = question.options ?? []
+  if (question.kind !== 'multi') return options.find((o) => o.label === answer)?.key ?? ''
+  const readings: (string | undefined)[][] = []
+  const read = (at: number, from: number, keys: (string | undefined)[]) => {
+    for (let i = from; i < options.length && readings.length < 2; i++) {
+      const end = at + options[i].label.length
+      if (!answer.startsWith(options[i].label, at)) continue
+      if (end === answer.length) readings.push([...keys, options[i].key])
+      else if (answer.startsWith(', ', end)) read(end + 2, i + 1, [...keys, options[i].key])
+    }
+  }
+  read(0, 0, [])
+  const [keys] = readings
+  return readings.length === 1 && keys.every(Boolean) ? keys.join(',') : ''
 }
 /**
  * The reply naming each answer by the message's own numbering: `1a. Topic: label` for an option (`2a,c.` for

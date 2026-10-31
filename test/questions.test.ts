@@ -215,10 +215,6 @@ describe('questions on a message', () => {
       [{ text: 'One?', kind: 'choice', options: [{ label: 'x' }, { label: ' ' }] }],
       'has an option without a label',
     )
-    await refused(
-      [{ text: 'Which?', kind: 'multi', options: [{ label: 'unit, fast' }, { label: 'e2e' }] }],
-      'its labels hold no ", "',
-    )
     await refused([{ text: 'Rate', kind: 'scale' }], 'needs scale')
     await refused([{ text: 'Rate', kind: 'scale', scale: { min: 1, max: 20 } }], 'at most 10 steps')
     await refused(
@@ -492,6 +488,27 @@ describe('answer text', () => {
       ),
     ).toBe('Land it?: Yes')
     expect(answerText([], decisions, 'Just a thought.')).toBe('Just a thought.')
+  })
+
+  // Agents had multi questions refused three times for a label holding ", ", the joiner of a multi answer.
+  it('reads multi labels that hold ", " by option order, and names no keys when two readings fit', () => {
+    const also = (labels: string[]): Question[] => [
+      {
+        text: 'Also add',
+        kind: 'multi',
+        ref: '3',
+        options: labels.map((label, i) => ({ label, key: 'abc'[i] })),
+      },
+    ]
+    const commas = also(['links, in place', 'copy', 'links'])
+    expect(checkQuestions(commas)).toEqual(commas)
+    const text = (answer: string, questions: Question[]) =>
+      answerText([{ question: 'Also add', answer }], questions)
+    expect(text('links, in place, links', commas)).toBe('3a,c. Also add: links, in place, links')
+    expect(text('links', commas)).toBe('3c. Also add: links')
+    expect(text('links, in place, typed', commas)).toBe('3: links, in place, typed')
+    // "x, y" is option a alone or b and c together: the words go, without keys.
+    expect(text('x, y', also(['x, y', 'x', 'y']))).toBe('3: x, y')
   })
 
   it('drops fields that do not apply to a kind and trims what it keeps', () => {
