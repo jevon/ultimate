@@ -58,6 +58,8 @@ export interface TraceQuery {
   conversation?: number
   /** ISO time; only calls that started after it. */
   since?: string
+  /** A call id or ISO time, exclusive; only calls that started before it, to page back past `limit`. */
+  before?: string
   /** The newest calls, at most 1000; default 100. */
   limit?: number
 }
@@ -429,14 +431,29 @@ CREATE INDEX IF NOT EXISTS calls_at ON calls (at);`)
           ['conversation', query.conversation],
         ] as const
         const where = filters.flatMap(([column, value]) =>
-          value === undefined ? [] : [{ sql: `${column} = ?`, value }],
+          value === undefined ? [] : [{ sql: `${column} = ?`, values: [value] }],
         )
-        if (since !== undefined) where.push({ sql: 'at > ?', value: since })
+        if (since !== undefined) where.push({ sql: 'at > ?', values: [since] })
+        if (query.before !== undefined) {
+          flush()
+          // A call id first: a lenient date parse would read some ids as times.
+          const call = database
+            ?.prepare('SELECT at, rowid FROM calls WHERE id = ?')
+            .get(query.before) as { at: number; rowid: number } | undefined
+          const at = Date.parse(query.before)
+          if (call)
+            where.push({
+              sql: '(at < ? OR (at = ? AND rowid < ?))',
+              values: [call.at, call.at, call.rowid],
+            })
+          else if (!Number.isNaN(at)) where.push({ sql: 'at < ?', values: [at] })
+          else throw new Error(`Invalid before: ${query.before} is no recorded call id or ISO time`)
+        }
         const limit = Math.min(Math.max(1, Math.trunc(Number(query.limit) || 100)), 1000)
         return select(
           where.length ? 'WHERE ' + where.map((filter) => filter.sql).join(' AND ') : '',
           `at DESC, rowid DESC LIMIT ${limit}`,
-          ...where.map((filter) => filter.value),
+          ...where.flatMap((filter) => filter.values),
         ).toReversed()
       },
       /**

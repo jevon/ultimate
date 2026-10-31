@@ -548,6 +548,38 @@ it('keeps the newest rows within the cap, drops old ones, and records nothing wh
   capped.close()
 })
 
+// A dream pass could not see the stretch it reviewed: query returned only the newest 1,000 calls, with no way back.
+it('pages back with before, an exclusive call id or ISO time', async () => {
+  const trace = callTrace(join(await temp(), 'trace.sqlite'))
+  trace.open()
+  const clock = vi.spyOn(performance, 'now')
+  // `two` and `three` start together: a call id cursor still splits them by write order.
+  for (const [name, started] of [
+    ['one', 1000],
+    ['two', 2000],
+    ['three', 2000],
+    ['four', 3000],
+    ['five', 4000],
+  ] as const) {
+    clock.mockReturnValue(started)
+    trace.run(call(name), () => name)
+  }
+  clock.mockRestore()
+  try {
+    const names = (query: Parameters<typeof trace.reader.query>[0]) =>
+      trace.reader.query(query).map((row) => row.name)
+    const newest = trace.reader.query({ limit: 2 })
+    expect(newest.map((row) => row.name)).toEqual(['four', 'five'])
+    expect(names({ before: newest[0].id, limit: 2 })).toEqual(['two', 'three'])
+    const three = trace.reader.query().find((row) => row.name === 'three')!
+    expect(names({ before: three.id })).toEqual(['one', 'two'])
+    expect(names({ before: three.at })).toEqual(['one'])
+    expect(() => trace.reader.query({ before: 'nope' })).toThrow('Invalid before')
+  } finally {
+    trace.close()
+  }
+})
+
 it('summarises values: secret keys redacted, long values cut, unserializable said so', () => {
   const text = summary({
     apiKey: 'k',

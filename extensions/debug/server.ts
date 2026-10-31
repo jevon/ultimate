@@ -42,8 +42,8 @@ function tree(nodes: CallTree[], depth = 0): string[] {
     ...tree(node.children, depth + 1),
   ])
 }
-/** At most `limit` lines within the budget, saying how many were left out. */
-function bounded(lines: string[], limit: number) {
+/** At most `limit` lines within the budget, saying how many were left out, then `next` of how many it showed. */
+function bounded(lines: string[], limit: number, next?: (shown: number) => string | undefined) {
   const shown: string[] = []
   let size = 0
   for (const line of lines.slice(0, limit)) {
@@ -52,7 +52,12 @@ function bounded(lines: string[], limit: number) {
     size += line.length + 1
   }
   const left = lines.length - shown.length
-  return shown.join('\n') + (left ? `\n… ${left} more; narrow the query or raise limit` : '')
+  const page = next?.(shown.length)
+  return (
+    shown.join('\n') +
+    (left ? `\n… ${left} more; narrow the query or raise limit` : '') +
+    (page ? `\n${page}` : '')
+  )
 }
 
 export default function debug(host: ExtensionHost) {
@@ -60,6 +65,7 @@ export default function debug(host: ExtensionHost) {
     call: 'events' | 'reactors' | 'catalogue' | 'trace' | 'apis' | 'api'
     events?: string[]
     since?: number | string
+    before?: string
     limit?: number
     trace?: string
     conversation?: number
@@ -136,6 +142,7 @@ export default function debug(host: ExtensionHost) {
           .query({
             ...(args.conversation === undefined ? {} : { conversation: args.conversation }),
             ...(args.since === undefined ? {} : { since: args.since }),
+            ...(args.before === undefined ? {} : { before: args.before }),
             limit,
           })
           .toReversed()
@@ -146,7 +153,12 @@ export default function debug(host: ExtensionHost) {
             ids({ trace: row.trace, conversation: row.conversation, entry: row.entry }),
           ].join('  '),
         )
-        return lines.length ? bounded(lines, limit) : 'No calls.'
+        // Rows run newest first: the oldest one shown pages back, unless the query had no more to give.
+        const older = (shown: number) =>
+          shown && (shown < rows.length || rows.length === limit)
+            ? `Older calls: before=${rows[shown - 1].id}`
+            : undefined
+        return lines.length ? bounded(lines, limit, older) : 'No calls.'
       }
       case 'apis': {
         const apis = await apiSummaries(host.extensions())
@@ -176,7 +188,7 @@ export default function debug(host: ExtensionHost) {
           'call: `events` lists durable events newest first (filter `events` by name like `workspaces.landed`, `since` an event id); ' +
           '`reactors` shows each reactor with its cursor, lag (pending events), whether it runs, and its last failure; ' +
           '`catalogue` lists each extension API with its provider, needs and wants, plus missing providers and cycles; ' +
-          '`trace` lists recorded service, action, reactor, tool and model calls newest first (filter by `conversation` or ISO `since`), or with `trace` set the whole call tree of that trace id, indented; ' +
+          '`trace` lists recorded service, action, reactor, tool and model calls newest first (filter by `conversation` or ISO `since`; page back with `before`, an exclusive call id or ISO time, as the last line names it), or with `trace` set the whole call tree of that trace id, indented; ' +
           "`apis` lists extension contracts (api.ts, refs.ts) with summaries and `api` returns one extension's by `name`, each file under a header. " +
           'Start from an event or a call, take its trace id and read the tree. Read-only; one line per row, ages relative; `limit` defaults to 20 events or 50 rows.',
         parameters: Type.Object({
@@ -196,6 +208,12 @@ export default function debug(host: ExtensionHost) {
           since: Type.Optional(
             Type.Union([Type.Integer({ minimum: 0 }), Type.String({ minLength: 1 })], {
               description: 'events: an event id to read after; trace: an ISO time.',
+            }),
+          ),
+          before: Type.Optional(
+            Type.String({
+              minLength: 1,
+              description: 'trace: only calls that started before this call id or ISO time.',
             }),
           ),
           trace: Type.Optional(Type.String({ minLength: 1, description: 'trace: a trace id.' })),
