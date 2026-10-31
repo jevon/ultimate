@@ -136,7 +136,12 @@ export async function send(
     const images =
       input.images === undefined
         ? undefined
-        : await resolveImages(tx, input.imagesFrom ?? (from as ConversationId), input.images)
+        : await resolveImages(
+            tx,
+            input.imagesFrom ?? (from as ConversationId),
+            input.images,
+            from as ConversationId,
+          )
     // Only a Reply answers a question to the user, and only the one it replies to; a dismissal closes it unanswered.
     if (from === 'user' && input.re !== undefined)
       for (const m of (await tx.doc(Messages, ROOT_CONVERSATION_ID)).messages)

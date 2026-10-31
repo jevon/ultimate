@@ -1,17 +1,51 @@
 import { Type } from '@earendil-works/pi-ai'
 import type { ImageContent, TextContent } from '@earendil-works/pi-ai'
+import { ROOT_CONVERSATION_ID } from '@earendil-works/pi-durable'
 import type { ConversationId, EntryId, EntryRecord, Tx } from '@earendil-works/pi-durable'
 import { imagesOf } from '../../lib/entries.ts'
 import { imageMimeTypes, maxImageBytes, maxImages } from '../../shared/protocol.ts'
+import { Roots } from '../lineage/api.ts'
+import { Started } from './addresses.ts'
 
 /**
  * Which images to forward: `latest`, the newest entry in the sender's conversation with images (a pasted input or a
- * tool result such as a screenshot), or that entry's id.
+ * tool result such as a screenshot), or the id of an entry with images in the sender's tree.
  */
 export type ImagesRef = 'latest' | number
 export const SCAN_PAGE = 200
-/** Resolve `ref` against conversation `from`'s visible history to the entry holding the images, checking the limits. */
-export async function resolveImages(tx: Tx, from: ConversationId, ref: ImagesRef) {
+/** Conversation `id` and those above it: its owner (a subagent's) or fork source (a branch's), up to a top. */
+async function above(tx: Tx, id: ConversationId) {
+  const chain: ConversationId[] = []
+  for (let record = await tx.conversation(id); record;) {
+    chain.push(record.id)
+    const up = record.owner?.conversationId ?? record.parent?.conversationId
+    record = up === undefined ? undefined : await tx.conversation(up)
+  }
+  return chain
+}
+/**
+ * Whether conversation `source` is in `sender`'s tree: under the same root, or under `sender` itself or a branch it
+ * started. @ultimate stands outside every tree, so it reaches the branches it started and their subagents.
+ */
+async function inTree(tx: Tx, sender: ConversationId, source: ConversationId) {
+  const sources = await above(tx, source)
+  if (sources.includes(sender)) return true
+  const { roots } = await tx.doc(Roots, ROOT_CONVERSATION_ID)
+  const root = (await above(tx, sender)).find((id) => roots.includes(id))
+  if (root !== undefined && root === sources.find((id) => roots.includes(id))) return true
+  for (const id of sources) if ((await tx.doc(Started, id)).by === sender) return true
+  return false
+}
+/**
+ * Resolve `ref` to the entry holding the images, checking the limits: `latest` and an id in conversation `from`'s
+ * visible history, else an id in a conversation of `sender`'s tree (`sender` is `from` unless `from` acts for it).
+ */
+export async function resolveImages(
+  tx: Tx,
+  from: ConversationId,
+  ref: ImagesRef,
+  sender: ConversationId = from,
+) {
   let entry: EntryRecord | undefined
   if (ref === 'latest') {
     let cursor: Parameters<Tx['scanEntries']>[2]
@@ -34,7 +68,14 @@ export async function resolveImages(tx: Tx, from: ConversationId, ref: ImagesRef
         1,
       )
     ).items[0]
-    if (!entry) throw new Error(`images: entry ${ref} is not in this conversation`)
+    if (!entry) {
+      entry = await tx.entry(ref as EntryId)
+      if (!entry) throw new Error(`images: there is no entry ${ref}`)
+      if (!(await inTree(tx, sender, entry.conversationId)))
+        throw new Error(
+          `images: entry ${ref} is in #${entry.conversationId}, outside your conversation's tree`,
+        )
+    }
   }
   const images = imagesOf(entry)
   if (!images.length) throw new Error(`images: entry ${entry.id} has no images`)
@@ -51,8 +92,8 @@ export async function resolveImages(tx: Tx, from: ConversationId, ref: ImagesRef
   return { entry: entry.id, count: images.length }
 }
 /**
- * The images of entry `id` as model content, each after a caption naming where it came from: the tool call whose
- * result holds it (`screenshot url=/x`) or an input, and its place ("Image 2 of 3"). The recipient can check that an
+ * The images of entry `id` as model content, each after a caption naming where it came from: its conversation, the
+ * tool call whose result holds it (`screenshot url=/x`) or an input, and its place ("Image 2 of 3"). The recipient can check that an
  * image is the one the text describes before passing it on. Entries never change, so a replay gets the same content.
  */
 export async function forwarded(tx: Tx, id: EntryId) {
@@ -75,7 +116,7 @@ export async function forwarded(tx: Tx, id: EntryId) {
         content.push(
           {
             type: 'text',
-            text: `Image ${++n} of ${total} (entry ${id}, ${source}):`,
+            text: `Image ${++n} of ${total} (entry ${id} in #${entry!.conversationId}, ${source}):`,
           },
           { type: 'image', data: block.data, mimeType: block.mimeType },
         )
@@ -117,5 +158,5 @@ const clip = (text: string, max: number) => {
 }
 export const imagesParameter = Type.Union([Type.Literal('latest'), Type.Integer({ minimum: 1 })], {
   description:
-    'Forward images from your conversation: "latest" for the newest input or tool result (screenshot) with images, or that entry\'s id.',
+    'Forward images: "latest" for the newest input or tool result (screenshot) with images in your conversation, or the id of an entry with images in your conversation or your tree (the branches you started, your subagents, conversations under your root).',
 })

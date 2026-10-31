@@ -310,7 +310,7 @@ function globals(
     {
       name: 'trace',
       description:
-        'Recorded calls (service, action, reactor, tool, model): the newest `limit` (default 100, at most 1000), oldest first; filter by trace id, conversation or ISO `since`. `before`, an exclusive call id or ISO time, pages back: pass the oldest row\'s id for the calls before it.',
+        "Recorded calls (service, action, reactor, tool, model): the newest `limit` (default 100, at most 1000), oldest first; filter by trace id, conversation or ISO `since`. `before`, an exclusive call id or ISO time, pages back: pass the oldest row's id for the calls before it.",
       signature:
         '(query?: { trace?: string; conversation?: number; since?: string; before?: string; limit?: number; project?: string; machine?: string }): Promise<{ id: string; parent?: string; trace: string; at: string; ms: number; caller: string; callee: string; kind: string; name: string; ok: boolean; error?: string; args?: string; result?: string; conversation?: number; task?: number; entry?: number }[]>',
       execute: read('trace', 0),

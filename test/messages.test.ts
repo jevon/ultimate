@@ -32,6 +32,8 @@ import { emit } from '../server/events.ts'
 import messagesExtension, { actions } from '../extensions/messages/server.ts'
 import pauseExtension, { actions as pauseActions } from '../extensions/pause/server.ts'
 import { Messages, MessageSent } from '../extensions/messages/api.ts'
+import { Started } from '../extensions/messages/addresses.ts'
+import { forwarded } from '../extensions/messages/images.ts'
 import { UserInputEvent } from '../shared/events.ts'
 import type { MessagesService } from '../extensions/messages/api.ts'
 import { BranchReceipts, Tally, rootOf, startBranch } from '../extensions/lineage/server.ts'
@@ -1325,8 +1327,8 @@ it('forwards images from the sender to a message recipient, by latest or entry i
   expect(entry?.data).toMatchObject({ images: 2 })
   expect(imagesIn(entry)).toEqual([png(0), png(1)])
   expect(captionsIn(entry)).toEqual([
-    `Image 1 of 2 (entry ${first.images!.entry}, an input):`,
-    `Image 2 of 2 (entry ${first.images!.entry}, an input):`,
+    `Image 1 of 2 (entry ${first.images!.entry} in #1, an input):`,
+    `Image 2 of 2 (entry ${first.images!.entry} in #1, an input):`,
   ])
   // A later input without images: `latest` still finds the one that has them, and an id names it exactly.
   await f.send(to, 'Again', { images: 'latest' })
@@ -1343,7 +1345,7 @@ it('refuses image references that do not resolve or exceed the limits', async ()
   await f.send(to, 'None yet', { images: 'latest' })
   expect(f.observed.join('\n')).toContain('found no entry with images')
   await f.send(to, 'Missing', { images: 99999 })
-  expect(f.observed.join('\n')).toContain('entry 99999 is not in this conversation')
+  expect(f.observed.join('\n')).toContain('there is no entry 99999')
   const plain = await submitWithImages(f, 'plain', 0)
   await f.send(to, 'Plain', { images: plain })
   expect(f.observed.join('\n')).toContain(`entry ${plain} has no images`)
@@ -1403,7 +1405,7 @@ it('forwards tool-result images, finds latest past a page, and checks every imag
   expect(imagesIn(await placed(f, f.recipient.id, message.id))).toEqual([png(7)])
   // Twice a forwarded image was not the one the text described, and @ultimate relayed it to the user unchecked.
   expect(captionsIn(await placed(f, f.recipient.id, message.id))).toEqual([
-    `Image 1 of 1 (entry ${shot}, screenshot url=/x fullPage=true):`,
+    `Image 1 of 1 (entry ${shot} in #1, screenshot url=/x fullPage=true):`,
   ])
   const big = 'A'.repeat(Math.ceil(((2 * 1024 * 1024 + 3) / 3) * 4))
   const oversized = await write(result([{ type: 'image', mimeType: 'image/png', data: big }]))
@@ -1414,7 +1416,7 @@ it('forwards tool-result images, finds latest past a page, and checks every imag
     `entry ${oversized} has an unsupported image or one over 2 MiB`,
   )
   expect(f.observed.join('\n')).toContain(`entry ${svg} has an unsupported image or one over 2 MiB`)
-  // Another conversation's entry is not this sender's to forward.
+  // A conversation outside the sender's tree is not its to forward from.
   const elsewhere = await f.opened.harness.commit(
     async (tx) =>
       (
@@ -1426,8 +1428,41 @@ it('forwards tool-result images, finds latest past a page, and checks every imag
     context,
   )
   await f.send(to, 'Elsewhere', { images: elsewhere })
-  expect(f.observed.join('\n')).toContain(`entry ${elsewhere} is not in this conversation`)
+  expect(f.observed.join('\n')).toContain(
+    `entry ${elsewhere} is in #${f.recipient.id}, outside your conversation's tree`,
+  )
   expect((await f.log())!.messages.filter((m) => m.from === 1)).toHaveLength(1)
+})
+// @ultimate, outside every tree, failed three times to forward a branch's screenshot sheet by its entry id.
+it("forwards a screenshot from a branch the sender started, captioned with the branch's call", async () => {
+  const f = await fixture()
+  const branch = await f.opened.harness.createConversation(
+    { ownership: { kind: 'ownerless' } },
+    context,
+  )
+  const shot = await f.opened.harness.commit(async (tx) => {
+    ;(await tx.doc(Started, branch.id)).by = ROOT_CONVERSATION_ID
+    await tx.appendEntry(branch.id, {
+      kind: 'test.entry',
+      model: [
+        fauxAssistantMessage([fauxToolCall('screenshot', { url: '/sheet' }, { id: 'shot' })], {
+          stopReason: 'toolUse',
+        }),
+      ],
+    } as never)
+    return (
+      await tx.appendEntry(branch.id, { kind: 'test.entry', model: result([png(3)]) } as never)
+    ).id
+  }, context)
+  await f.send('user', 'The sheet', { images: shot })
+  expect((await f.log())!.messages).toMatchObject([
+    { from: 1, to: 'user', images: { entry: shot, count: 1 } },
+  ])
+  const content = await f.opened.harness.commit((tx) => forwarded(tx, shot), context)
+  expect(content[0]).toEqual({
+    type: 'text',
+    text: `Image 1 of 1 (entry ${shot} in #${branch.id}, screenshot url=/sheet):`,
+  })
 })
 async function branched(f: Awaited<ReturnType<typeof fixture>>) {
   const tool = (await f.opened.root.agent(context)).deferred.find(
