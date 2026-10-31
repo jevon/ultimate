@@ -67,8 +67,8 @@ function cron(expr: string, tz: string) {
 }
 
 const FORMS = 'cron "0 9 * * 1-5" Europe/Vienna, at 2026-12-01T09:00:00Z, in 30m or every 15m'
-/** Five cron fields without `cron` and quotes, then an optional IANA zone; no other form has five words. */
-const BARE_CRON = /^(\S+(?:\s+\S+){4})(?:\s+([A-Za-z]\S*))?$/
+/** Five cron fields without `cron` and quotes, then an optional IANA zone: no other form has five such words. */
+const BARE_CRON = /^([\d*,/-]+(?:\s+[\d*,/-]+){4})(?:\s+([A-Za-z]\S*))?$/
 
 export function parseSchedule(input: string | Schedule, now = Date.now()): Schedule {
   let schedule: Schedule

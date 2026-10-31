@@ -363,10 +363,7 @@ it('writes a repeated trace-starting action or service call once a minute and co
     expect(trace.reader.query().filter((row) => row.name === 'x/poll')).toHaveLength(1)
     // Sealed calls carry no arguments to compare: each is written.
     for (let i = 0; i < 2; i++)
-      trace.run(
-        { kind: 'action', caller: 'ui', callee: 'x', name: 'x/answer', sealed: true },
-        () => 1,
-      )
+      trace.run({ kind: 'action', caller: 'ui', callee: 'secrets', name: 'x/answer' }, () => 1)
     expect(trace.reader.query().filter((row) => row.name === 'x/answer')).toHaveLength(2)
     // A minute after it was written, the call is written again.
     clock.mockReturnValue(1_060_000)

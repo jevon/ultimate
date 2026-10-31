@@ -30,8 +30,6 @@ export interface Call {
   conversationId?: number
   taskId?: number
   entryId?: number
-  /** Record neither arguments nor result. */
-  sealed?: boolean
   /** Record no result (a tool's lives in the transcript). */
   resultless?: boolean
   /** A read-only poll: on success, counted in `polls()` instead of written, with the plain calls it makes. */
@@ -79,8 +77,13 @@ const REPEAT_MS = 60_000
  * The key of a call that starts its trace (as UI polls do) and can repeat: an action or service call with comparable
  * arguments. Nested calls belong to their parent's tree; sealed ones have no arguments to compare.
  */
-const repeatKey = (call: Call, parent: EventContext | null, args: string | undefined) =>
-  !parent && (call.kind === 'action' || call.kind === 'service') && !call.sealed
+const repeatKey = (
+  call: Call,
+  sealed: boolean,
+  parent: EventContext | null,
+  args: string | undefined,
+) =>
+  !parent && (call.kind === 'action' || call.kind === 'service') && !sealed
     ? `${call.name}\0${args ?? ''}`
     : undefined
 const SECRET = /secret|token|password|key|auth/i
@@ -226,10 +229,10 @@ export function callTrace(file: string | (() => string), retention = { rows: 200
       const value = call[key] ?? parent?.[key]
       if (value !== undefined) context[key] = value
     }
-    const credentials = SEALED.has(call.callee)
-    const sealed = call.sealed || credentials
+    // A call carrying credentials keeps no arguments, result or error message.
+    const sealed = SEALED.has(call.callee)
     const args = (!sealed && summary(call.args)) || undefined
-    const repeat = repeatKey({ ...call, sealed }, parent, args)
+    const repeat = repeatKey(call, sealed, parent, args)
     const last = repeat === undefined ? undefined : written.get(repeat)
     // Inside a poll, only plain action and service calls go with it: a tool, model or sealed call is always written.
     const plain = (call.kind === 'action' || call.kind === 'service') && !sealed
@@ -271,7 +274,7 @@ export function callTrace(file: string | (() => string), retention = { rows: 200
           call.kind,
           call.name,
           ok ? 1 : 0,
-          ok ? null : failure(value, credentials),
+          ok ? null : failure(value, sealed),
           args ?? null,
           (ok && !sealed && !call.resultless && summary(value)) || null,
           context.conversationId ?? null,
