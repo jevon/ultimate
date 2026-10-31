@@ -74,7 +74,10 @@ export default (host) => {
     tools: [defineTool({
       name: 'probe',
       description: 'Calls delta',
-      parameters: Type.Object({}),
+      parameters: Type.Object({
+        path: Type.Optional(Type.String()),
+        token: Type.Optional(Type.String()),
+      }),
       execute: async (_args, api, ctx) => {
         await api.commit(async () => delta.note({ tool: true }), ctx)
         return { output: [{ type: 'text', text: 'probed' }] }
@@ -199,7 +202,9 @@ it('records secrets actions without arguments or results', async () => {
 it('links a tool call to its conversation and tool-call entry, with service calls as children', async () => {
   const server = await start()
   server.host.faux!.setResponses([
-    fauxAssistantMessage([fauxToolCall('probe', {})], { stopReason: 'toolUse' }),
+    fauxAssistantMessage([fauxToolCall('probe', { path: 'notes.md', token: 's3cret' })], {
+      stopReason: 'toolUse',
+    }),
     fauxAssistantMessage('done'),
   ])
   await server.root.submit({ type: 'input', content: 'probe' }, context)
@@ -209,7 +214,9 @@ it('links a tool call to its conversation and tool-call entry, with service call
     (entry) => entry.kind === 'pi.assistant' && JSON.stringify(entry.model).includes('"toolCall"'),
   )!
   view.dispose()
-  const tool = server.extensions.trace.query().find((row) => row.kind === 'tool')!
+  const tools = server.extensions.trace.query({ kind: 'tool' })
+  expect(tools).toHaveLength(1)
+  const [tool] = tools
   expect(tool).toMatchObject({
     caller: 'agent',
     callee: 'tooler',
@@ -219,7 +226,12 @@ it('links a tool call to its conversation and tool-call entry, with service call
     entry: assistant.id,
   })
   expect(tool.task).toEqual(expect.any(Number))
-  expect(tool).not.toHaveProperty('args')
+  // Its arguments as any call's, secret-looking keys redacted; its result lives in the transcript.
+  expect(tool.args).toBe('{"path":"notes.md","token":"[redacted]"}')
+  expect(tool).not.toHaveProperty('result')
+  expect(() => server.extensions.trace.query({ kind: 'tools' as never })).toThrow(
+    'Invalid kind: tools; use one of service, action, reactor, tool, model',
+  )
   expect(server.extensions.trace.query({ conversation: server.root.id })).toContainEqual(
     expect.objectContaining({
       name: 'delta.note',
@@ -674,8 +686,11 @@ it('names a failed shell command by its exit code, from the error diagnostic', a
     {} as never,
   )
   const [bashRow] = trace.reader.query().filter((row) => row.name === 'bash')
-  expect(bashRow).toMatchObject({ ok: false, error: 'Command exited with code 2' })
-  expect(bashRow).not.toHaveProperty('args')
+  expect(bashRow).toMatchObject({
+    ok: false,
+    error: 'Command exited with code 2',
+    args: '{"command":"make all"}',
+  })
   trace.close()
 })
 

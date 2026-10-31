@@ -48,6 +48,18 @@ describe('automation schedules', () => {
     )
     expect(parseSchedule('cron "* * * * *"').kind).toBe('cron')
   })
+  it('takes a bare cron expression with a zone, and names the accepted forms for anything else', () => {
+    // As an agent wrote it: the five fields without `cron` and quotes, then the zone.
+    expect(parseSchedule('0 1 * * * America/Halifax')).toEqual({
+      kind: 'cron',
+      expr: '0 1 * * *',
+      tz: 'America/Halifax',
+    })
+    for (const input of ['tomorrow at 9', 'cron 0 1 * * *'])
+      expect(() => parseSchedule(input)).toThrow(
+        `Unknown schedule ${JSON.stringify(input)}; use cron "0 9 * * 1-5" Europe/Vienna, at 2026-12-01T09:00:00Z, in 30m or every 15m`,
+      )
+  })
   it('rejects invalid input and impossible cron dates', () => {
     for (const input of [
       'every 0.5s',

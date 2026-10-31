@@ -66,8 +66,13 @@ function cron(expr: string, tz: string) {
   return { local, fields }
 }
 
+const FORMS = 'cron "0 9 * * 1-5" Europe/Vienna, at 2026-12-01T09:00:00Z, in 30m or every 15m'
+/** Five cron fields without `cron` and quotes, then an optional IANA zone; no other form has five words. */
+const BARE_CRON = /^(\S+(?:\s+\S+){4})(?:\s+([A-Za-z]\S*))?$/
+
 export function parseSchedule(input: string | Schedule, now = Date.now()): Schedule {
   let schedule: Schedule
+  const bare = typeof input === 'string' ? BARE_CRON.exec(input.trim()) : null
   if (typeof input !== 'string') schedule = { ...input }
   else if (input.startsWith('in '))
     schedule = { kind: 'at', time: new Date(now + duration(input.slice(3).trim())).toISOString() }
@@ -75,19 +80,25 @@ export function parseSchedule(input: string | Schedule, now = Date.now()): Sched
     schedule = { kind: 'every', ms: duration(input.slice(6).trim()) }
   else if (input.startsWith('cron ')) {
     const match = /^cron\s+"([^"]+)"(?:\s+(\S+))?$/.exec(input)
-    if (!match) throw new Error('Use cron "0 9 * * 1-5" Europe/Vienna')
+    if (!match) throw new Error(`Unknown schedule ${JSON.stringify(input)}; use ${FORMS}`)
     schedule = {
       kind: 'cron',
       expr: match[1],
       tz: match[2] ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     }
-  } else schedule = { kind: 'at', time: input.replace(/^at\s+/, '') }
+  } else if (bare)
+    schedule = {
+      kind: 'cron',
+      expr: bare[1],
+      tz: bare[2] ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }
+  else schedule = { kind: 'at', time: input.replace(/^at\s+/, '') }
   if (schedule.kind === 'every') {
     if (!Number.isFinite(schedule.ms) || schedule.ms < 1000)
       throw new Error('Intervals must be at least 1s')
   } else if (schedule.kind === 'at') {
     if (!/^\d{4}-\d\d-\d\dT/.test(schedule.time) || !Number.isFinite(Date.parse(schedule.time)))
-      throw new Error('Use an ISO time')
+      throw new Error(`Unknown schedule ${JSON.stringify(input)}; use ${FORMS}`)
     schedule.time = new Date(schedule.time).toISOString()
   } else {
     schedule.tz ||= Intl.DateTimeFormat().resolvedOptions().timeZone

@@ -124,6 +124,9 @@ it('shows events, reactor failures, the catalogue and a trace tree, within limit
   expect(older).toBe(`Older calls: before=${second.id}`)
   const next = await debug({ call: 'trace', conversation: 1, before: second.id, limit: 1 })
   expect(next.split('\n').at(-1)).toBe(`Older calls: before=${third.id}`)
+  const reactorRows = (await debug({ call: 'trace', kind: 'reactor' })).split('\n')
+  expect(reactorRows.length).toBeGreaterThan(0)
+  for (const row of reactorRows) expect(row).toMatch(/^\d+s\s+reactor {2}/)
   const tree = (await debug({ call: 'trace', trace: first.trace })).split('\n')
   expect(tree.slice(0, 3)).toEqual([
     expect.stringMatching(/^action {2}ui → alpha\/go {2}\d+ms {2}ok {2}args=\{"n":1\}$/),

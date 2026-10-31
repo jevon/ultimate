@@ -110,6 +110,16 @@ export function triggers(
     if (/^#[1-9]\d*$/.test(of)) return Number(of.slice(1)) as ConversationId
     return undefined
   }
+  /**
+   * The conversation `of` names now, read from the standing index: unlike `resolve`, it never makes or refreshes a
+   * standing agent, a commit each, which runs on every context measurement. One not made yet has nothing to measure.
+   */
+  const watched = (standing: Record<string, ConversationId>, of: string) =>
+    STANDING.test(of)
+      ? Object.hasOwn(standing, of.slice(1))
+        ? standing[of.slice(1)]
+        : undefined
+      : (Number(of.slice(1)) as ConversationId)
   /** Evaluate `a`'s condition on `usage`, the measurement a commit published, else the conversation's current one. */
   async function evaluate(tx: Tx, a: Automation, id?: number, measured?: ContextUsage) {
     if (!a.enabled || !a.condition || !id) return
@@ -150,9 +160,11 @@ export function triggers(
    */
   async function check(changed?: Map<number, ContextUsage>, idle = false) {
     const state = await host.harness().snapshot(Automations, BACKGROUND_CONTEXT)
+    const standing =
+      (await host.harness().snapshot(Standing, ROOT_CONVERSATION_ID, BACKGROUND_CONTEXT)) ?? {}
     for (const a of Object.values(state?.automations ?? {})) {
       if (closed || !a.enabled || !a.condition || (idle && !a.condition.idleFor)) continue
-      const target = await resolve(a.condition.of)
+      const target = watched(standing, a.condition.of)
       if (!target || (changed && !changed.has(target))) continue
       await host.harness().commit(async (tx) => {
         const current = (await tx.doc(Automations)).automations[a.id]
@@ -204,10 +216,7 @@ export function triggers(
         const state = await tx.doc(Automations)
         for (const a of Object.values(state.automations)) {
           if (!a.condition?.idleFor) continue
-          const of = a.condition.of
-          const target = STANDING.test(of)
-            ? (await tx.doc(Standing, ROOT_CONVERSATION_ID))[of.slice(1)]
-            : Number(of.slice(1))
+          const target = watched(await tx.doc(Standing, ROOT_CONVERSATION_ID), a.condition.of)
           if (target === data.conversation) a.condition.inputAt = Date.parse(at)
         }
       },

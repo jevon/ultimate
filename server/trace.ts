@@ -18,7 +18,8 @@ import type {
 import type { EventContext } from '../shared/events.ts'
 
 export type TraceContext = EventContext & { traceId: string; parentCall: string }
-export type CallKind = 'service' | 'action' | 'reactor' | 'tool' | 'model'
+export const CALL_KINDS = ['service', 'action', 'reactor', 'tool', 'model'] as const
+export type CallKind = (typeof CALL_KINDS)[number]
 /** What a traced call is; ids given here override those of the enclosing work. */
 export interface Call {
   kind: CallKind
@@ -29,8 +30,10 @@ export interface Call {
   conversationId?: number
   taskId?: number
   entryId?: number
-  /** Record neither arguments nor result (a tool's live in the transcript). */
+  /** Record neither arguments nor result. */
   sealed?: boolean
+  /** Record no result (a tool's lives in the transcript). */
+  resultless?: boolean
   /** A read-only poll: on success, counted in `polls()` instead of written, with the plain calls it makes. */
   poll?: boolean
 }
@@ -56,6 +59,7 @@ export type CallTree = CallRow & { children: CallTree[] }
 export interface TraceQuery {
   trace?: string
   conversation?: number
+  kind?: CallKind
   /** ISO time; only calls that started after it. */
   since?: string
   /** A call id or ISO time, exclusive; only calls that started before it, to page back past `limit`. */
@@ -269,7 +273,7 @@ export function callTrace(file: string | (() => string), retention = { rows: 200
           ok ? 1 : 0,
           ok ? null : failure(value, credentials),
           args ?? null,
-          (ok && !sealed && summary(value)) || null,
+          (ok && !sealed && !call.resultless && summary(value)) || null,
           context.conversationId ?? null,
           context.taskId ?? null,
           context.entryId ?? null,
@@ -396,7 +400,9 @@ CREATE INDEX IF NOT EXISTS calls_at ON calls (at);`)
             conversationId: api.conversationId,
             taskId: api.taskId,
             entryId: input?.kind === 'model' ? input.assistant : undefined,
-            sealed: true,
+            // Its arguments, cut and with secret-looking keys redacted like any call's, say what it was asked.
+            args,
+            resultless: true,
           }
           const { context: self, finish } = begin(call, parent ?? null)
           const key = `${api.taskId}/${api.callId}`
@@ -426,9 +432,12 @@ CREATE INDEX IF NOT EXISTS calls_at ON calls (at);`)
       query(query: TraceQuery = {}): CallRow[] {
         const since = query.since === undefined ? undefined : Date.parse(query.since)
         if (Number.isNaN(since)) throw new Error(`Invalid since: ${query.since}`)
+        if (query.kind !== undefined && !CALL_KINDS.includes(query.kind))
+          throw new Error(`Invalid kind: ${query.kind}; use one of ${CALL_KINDS.join(', ')}`)
         const filters = [
           ['trace', query.trace],
           ['conversation', query.conversation],
+          ['kind', query.kind],
         ] as const
         const where = filters.flatMap(([column, value]) =>
           value === undefined ? [] : [{ sql: `${column} = ?`, values: [value] }],

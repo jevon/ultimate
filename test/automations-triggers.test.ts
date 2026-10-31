@@ -74,13 +74,15 @@ async function fixture() {
       throw new Error(message)
     },
   }
+  // As the real one: the standing agent's conversation of the moment, the fixture's target before one is recorded.
+  const standing = vi.fn<(name: string) => Promise<ConversationId | undefined>>(async (name) =>
+    name === 'ultimate'
+      ? ((await opened.harness.snapshot(Standing, ROOT_CONVERSATION_ID, context))?.ultimate ??
+        target)
+      : undefined,
+  )
   host.provided.set('subagents', {
-    // As the real one: the standing agent's conversation of the moment, the fixture's target before one is recorded.
-    standing: async (name: string) =>
-      name === 'ultimate'
-        ? ((await opened.harness.snapshot(Standing, ROOT_CONVERSATION_ID, context))?.ultimate ??
-          target)
-        : undefined,
+    standing,
     createChild: (tx: Tx, options: Parameters<SubagentsService['createChild']>[1]) =>
       createChild(host, tx, options),
   })
@@ -132,6 +134,12 @@ async function fixture() {
     stopEvents: events.stop,
     usage,
     send,
+    standing,
+    /** Record the target as @ultimate's conversation, as making the standing agent does. */
+    stand: () =>
+      opened.harness.commit(async (tx) => {
+        ;(await tx.doc(Standing, ROOT_CONVERSATION_ID)).ultimate = target
+      }, context),
     get harness() {
       return opened.harness
     },
@@ -349,6 +357,7 @@ it('rolls back a fire and its cursor together, then retries exactly once', async
 it('uses context hysteresis and cooldown and catches a missed crossing on open once', async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
   const f = await fixture()
+  await f.stand()
   const a = (await f.action('create', {
     name: 'Context',
     condition: { metric: 'context', of: '@ultimate', above: 80 },
@@ -452,8 +461,29 @@ it('fires an idle condition only after the pause, at the threshold, and re-arms 
   expect((await f.record(a.id)).condition?.inputAt).toBe(Date.now())
 })
 
+it('reads an @name condition target from the standing index, never refreshing the agent per measurement', async () => {
+  const f = await fixture()
+  const a = (await f.action('create', {
+    name: 'Context',
+    condition: { metric: 'context', of: '@ultimate', above: 80 },
+  })) as Automation
+  f.standing.mockClear()
+  // No @ultimate yet: a measurement has no conversation to belong to.
+  await f.usage(81)
+  await f.opener()
+  expect((await f.record(a.id)).fires).toBe(0)
+  await f.stand()
+  for (const percent of [50, 81]) {
+    await f.usage(percent)
+    await until(async () => (await f.record(a.id)).condition?.value === percent)
+  }
+  expect((await f.record(a.id)).fires).toBe(1)
+  expect(f.standing).not.toHaveBeenCalled()
+})
+
 it('sees a re-arm and the crossing after it even when both commit before evaluation', async () => {
   const f = await fixture()
+  await f.stand()
   const a = (await f.action('create', {
     name: 'Lagging',
     condition: { metric: 'context', of: '@ultimate', above: 80, cooldownMs: 0 },
